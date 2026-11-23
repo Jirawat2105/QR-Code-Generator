@@ -1,0 +1,1 @@
+"""MuPhoto QR Studio."""

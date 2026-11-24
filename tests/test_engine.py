@@ -117,6 +117,72 @@ def test_minimalist_keeps_customization():
     assert meta["ecc"].startswith("M")
 
 
+@pytest.mark.parametrize("url", ["https://example.com", "https://example.com/abc", "https://example.com/"+"a"*50])
+@pytest.mark.parametrize("with_logo", [False, True])
+def test_minimalist_toggle_is_not_overridden_by_logo(url, with_logo):
+    logo=png_bytes(Image.new("RGBA",(300,300),"#19C47D")) if with_logo else None
+    d=Design(url=url,logo=logo,body="Square Rounded",resolution=1024)
+    regular,normal=render(d)
+    minimal,small=render(replace(d,minimalist=True))
+    assert small["mode"]=="Minimalist"
+    assert small["ecc"].startswith("Q" if with_logo else "M")
+    assert small["modules"]<=normal["modules"]
+    assert regular!=minimal  # Even equal-size grids must encode the chosen ECC.
+    assert small["regular_modules"]==normal["modules"]
+    assert minimal!=regular  # Even when both fit the same grid, ECC/matrix changes.
+    if url.endswith("a"*50):
+        assert (normal["modules"],small["modules"])==(49,41 if with_logo else 37)
+    assert decode(minimal)==decode(regular)==url
+    restored,meta=render(replace(d,minimalist=False))
+    assert restored==regular and meta["mode"]=="Regular"
+
+
+@pytest.mark.parametrize("fmt", ["PNG","JPG","SVG","PDF"])
+@pytest.mark.parametrize("axis", ["Width","Height"])
+@pytest.mark.parametrize("reserve", [True,False])
+def test_minimalist_logo_exports_match_preview_and_scan(fmt,axis,reserve):
+    logo=png_bytes(Image.new("RGBA",(400,180),"#19C47D"))
+    d=Design(url="https://example.com/"+"a"*50,minimalist=True,logo=logo,
+             logo_axis=axis,logo_scale=10, reserve_logo=reserve, body="Square Rounded",
+             eye_frame="Square Rounded",eye_ball="Square Rounded",color_mode="Gradient",resolution=1024)
+    _,preview=render(d,"PREVIEW",640)
+    data,export=render(d,fmt)
+    assert (export["mode"],export["modules"],export["ecc"])==(preview["mode"],preview["modules"],preview["ecc"])
+    assert export["modules"]==41 and export["ecc"].startswith("Q")
+    assert logo_geometry(d,41)[2]/logo_geometry(d,41)[3]==pytest.approx(400/180)
+    if fmt=="SVG":
+        data=resvg_py.svg_to_bytes(svg_string=data.decode())
+    if fmt=="PDF":
+        with pdfium.PdfDocument(data) as document:
+            qr=zxingcpp.read_barcode(document[0].render(scale=300/72).to_pil())
+    else:
+        qr=zxingcpp.read_barcode(Image.open(io.BytesIO(data)))
+    assert qr and qr.text==d.url
+    assert qr.ec_level=="Q" and int(qr.extra["Version"])*4+17==41
+
+
+def test_minimalist_add_remove_logo_does_not_reset_mode():
+    d=Design(url="https://example.com/"+"a"*50,minimalist=True,resolution=768)
+    before,first=render(d)
+    with_logo=replace(d,logo=png_bytes(Image.new("RGBA",(300,300),"#19C47D")))
+    imported,second=render(with_logo)
+    removed,last=render(replace(with_logo,logo=None))
+    assert [first["modules"],second["modules"],last["modules"]]==[37,41,37]
+    assert first["mode"]==second["mode"]==last["mode"]=="Minimalist"
+    assert before==removed
+    assert decode(imported)==d.url
+
+
+@pytest.mark.parametrize("field,value",[(field,value) for field,values in
+    (("body",BODY_SHAPES),("eye_frame",FRAME_SHAPES),("eye_ball",BALL_SHAPES)) for value in values])
+def test_each_shape_scans_in_minimalist_with_default_logo(field,value):
+    d=replace(Design(minimalist=True,logo=png_bytes(Image.new("RGBA",(300,300),"#19C47D")),
+                     resolution=1024),**{field:value})
+    data,meta=render(d)
+    assert meta["mode"]=="Minimalist" and meta["ecc"].startswith("Q")
+    assert decode(data)==d.url,(field,value)
+
+
 @pytest.mark.parametrize("url",["","hello","ftp://example.com","https://","https://a b.com","https://[bad","https://example.com:bad"])
 def test_url_required(url):
     with pytest.raises(ValueError):

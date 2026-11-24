@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 DIST=ROOT/"dist"
-VERSION="1.1.1"
+VERSION="1.1.2"
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
         "Enter a full http/https URL. Choose your shapes, colors and optional logo.\n"
         "Logo scale can reference Width or Height, preserving original proportions.\n"
         "Oversized logos automatically fit inside a safe center area.\n"
-        "Tab completes https:// in the URL field. Minimalist keeps all styles editable.\n"
+        "Tab completes https:// in the URL field. Minimalist keeps all styles editable, including with a logo.\n"
         "Click the app icon for Credits: Jirawat Pratuangtip / github.com/Jirawat2105.\n"
         "Export PNG, SVG, PDF, JPG, or all four in a ZIP.\n"
         "PNG/SVG support transparency; JPG/PDF use a white matte.\n"

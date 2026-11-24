@@ -15,7 +15,7 @@ import pypdfium2 as pdfium
 import zxingcpp
 from PIL import Image, ImageDraw
 from playwright.sync_api import expect, sync_playwright
-from e2e_logo import LOGO_URL, make_logo, assert_intact_logo
+from e2e_logo import LOGO_URL, make_logo, assert_intact_logo, assert_qr_state
 
 OUT=Path("test-results/e2e")
 OUT.mkdir(parents=True,exist_ok=True)
@@ -304,7 +304,7 @@ def run():
         chooser.value.set_files(wide)
         tap(page,page.get_by_role("switch",name="Wide wordmark",exact=True))
         for fraction, label, readout in ((.87,"Logo size · % of QR area","20%"),
-                                         (.2,"Space around logo","2 modules")):
+                                         (.2,"Space around logo","1 modules")):
             set_slider(page,label,readout,fraction)
         page.screenshot(path=OUT/"05-wordmark-settings.png")
         select(page,"File format","PNG")
@@ -315,6 +315,58 @@ def run():
         assert x2-x1>2000,"Wide wordmark setting must actually exceed the compact 25% cap"
         assert abs((x2-x1)/(y2-y1)-1200/280)<.04,"Wordmark ratio must stay original"
         report["scenarios"].append("Square Rounded reference style and Wide wordmark: real slider adjustments, proportional logo >50% of output width, exported PNG decoded")
+        # Minimalist must stay enabled through actual artwork removal/import.
+        # A long URL exposes the previous silent fallback: H 49 vs Q 41.
+        tap(page,page.get_by_role("button",name="Remove logo"))
+        tap(page,page.get_by_role("switch",name="Wide wordmark",exact=True))
+        set_slider(page,"Logo size · % of QR area","70%",.2)
+        tap(page,page.get_by_role("switch",name="Minimalist QR",exact=True))
+        wait_ready(page)
+        expect(page.get_by_text("Minimalist · 37 × 37 modules",exact=False)).to_be_visible()
+        with page.expect_file_chooser() as chooser:
+            tap(page,page.get_by_role("button",name="Choose logo",exact=True))
+        chooser.value.set_files(square_logo)
+        wait_ready(page)
+        expect(page.get_by_role("switch",name="Minimalist QR",exact=True)).to_be_checked()
+        expect(page.get_by_text("Minimalist · 41 × 41 modules",exact=False)).to_be_visible()
+        expect(page.get_by_text("Regular: 49 × 49",exact=False)).to_be_visible()
+        minimal_bundle=save_download(page,"Export all formats (.zip)",OUT/"minimal-logo-all.zip")
+        with zipfile.ZipFile(io.BytesIO(minimal_bundle)) as bundle:
+            for ext in ("png","jpg","svg","pdf"):
+                data=bundle.read(f"qr-generator-4000.{ext}")
+                if ext=="svg": data=resvg_py.svg_to_bytes(svg_string=data.decode())
+                if ext=="pdf":
+                    with pdfium.PdfDocument(data) as document:
+                        buffer=io.BytesIO()
+                        document[0].render(scale=300/72).to_pil().save(buffer,"PNG")
+                        data=buffer.getvalue()
+                assert scan(data)==LOGO_URL
+                assert_qr_state(data,LOGO_URL,"Q",41)
+                assert_intact_logo(data)
+        report["scenarios"].append("Minimalist remains enabled on real logo import: 49-to-41 modules, intact logo and all four exports independently decoded")
+        # Toggle rapidly, ending ON, so a late Regular render cannot win.
+        switch=page.get_by_role("switch",name="Minimalist QR",exact=True)
+        reveal(page,switch)
+        for _ in range(4): switch.click(force=True)
+        wait_ready(page)
+        expect(switch).to_be_checked()
+        expect(page.get_by_text("Minimalist · 41 × 41 modules",exact=False)).to_be_visible()
+        page.set_viewport_size({"width":390,"height":844})
+        page.wait_for_timeout(800)
+        page.get_by_role("button",name="Preview & export",exact=True).click(force=True)
+        page.wait_for_timeout(800)
+        compact_preview=page.screenshot(path=OUT/"06-minimal-logo.png")
+        assert_qr_state(compact_preview,LOGO_URL,"Q",41)
+        assert_intact_logo(compact_preview)
+        page.set_viewport_size({"width":1280,"height":900})
+        page.wait_for_timeout(800)
+        tap(page,page.get_by_role("button",name="Remove logo"))
+        wait_ready(page)
+        expect(page.get_by_text("Minimalist · 37 × 37 modules",exact=False)).to_be_visible()
+        tap(page,switch)
+        wait_ready(page)
+        expect(page.get_by_text("Regular · 49 × 49 modules",exact=False)).to_be_visible()
+        report["scenarios"].append("Rapid Minimalist toggles and logo removal preserve latest mode; OFF restores Regular 49x49")
         browser.close()
     assert not report["console_errors"],report["console_errors"]
     report["result"]="PASS"

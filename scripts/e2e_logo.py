@@ -2,9 +2,20 @@
 import io
 
 from PIL import Image, ImageDraw
+import zxingcpp
 
 LOGO_URL = "https://example.com/" + "a" * 50  # Version 8: 49 x 49, central alignment.
 LOGO_COLOR = (25, 196, 125)
+
+
+def assert_qr_state(data, url, ecc, modules):
+    image=Image.open(io.BytesIO(data)).convert("RGBA")
+    matte=Image.new("RGB",image.size,"white")
+    matte.paste(image,mask=image.getchannel("A"))
+    qr=zxingcpp.read_barcode(matte)
+    assert qr and qr.text==url,"Actual QR data must match the current URL"
+    assert qr.ec_level==ecc,f"Actual QR must use {ecc}, got {qr.ec_level}"
+    assert int(qr.extra["Version"])*4+17==modules,"Actual grid must match the selected mode"
 
 
 def make_logo(path, size=(400,400)):

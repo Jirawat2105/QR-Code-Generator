@@ -1,4 +1,4 @@
-# QR Generator 1.1.1
+# QR Generator 1.1.2
 
 Python GUI สร้าง QR สำหรับ Windows และ Android ธีมมืด พร้อมพรีวิวสด ทำงานภายในอุปกรณ์ ไม่ต้องสมัครสมาชิก และไม่สร้างลิงก์ redirect ที่หมดอายุ
 
@@ -31,10 +31,18 @@ uv run flet run src/main.py
 
 โหมดปกติจำกัดด้านยาวของโลโก้ไว้ที่ 25% เช่นเดิม ส่วน Wide wordmark จำกัดด้านสั้นไว้ที่ 25% และเว้นแถบขอบ QR 8 modules เพื่อหลีกเลี่ยง timing/finder โดยไม่ยืดหรือบีบภาพ
 
+## ใช้ Minimalist พร้อมโลโก้
+
+เปิด **Minimalist QR** ได้ทั้งก่อนและหลังใส่โลโก้ โดยยังปรับรูปทรง สี และสัดส่วนโลโก้ได้ พรีวิวแสดงคำว่า **Minimalist** พร้อมจำนวนช่องจริงเทียบกับ **Regular** การลบโลโก้จะไม่ปิดสวิตช์ Minimalist
+
+- ไม่มีโลโก้ใช้ error correction M; มีโลโก้ใช้ Q; ปิด Minimalist จะกลับเป็น H
+- URL บางตัวใช้จำนวนช่องเท่ากันใน Q และ H ได้ แต่โหมดที่เลือกยังมีผล ดูชื่อโหมดและระดับที่พรีวิวแสดง
+- ค่าเริ่มต้นช่องว่างรอบโลโก้เป็น 1 module หากโลโก้หรือช่องว่างใหญ่เกินไป ให้ลดขนาดหรือปิด Minimalist แล้วทดสอบไฟล์ส่งออกใหม่
+
 ## ความสามารถ
 
 - บังคับ URL แบบ HTTP/HTTPS และตรวจค่าก่อนส่งออก
-- Minimalist ลดจำนวนโมดูลเมื่อทำได้ โดยยังปรับรูปทรง/สี/โลโก้ได้ทั้งหมด ใช้ error correction M เมื่อไม่มีโลโก้ และ H เมื่อมีโลโก้
+- Minimalist ลดจำนวนโมดูลเมื่อทำได้ โดยยังปรับรูปทรง/สี/โลโก้ได้ทั้งหมด ใช้ error correction M เมื่อไม่มีโลโก้ และ Q เมื่อมีโลโก้ โดยโหมดปกติใช้ H และพรีวิวแสดงโหมดกับจำนวนช่องจริงเทียบกับโหมดปกติ
 - Body: Square, Square Rounded, Rounded, Dots, Diamond, Horizontal
 - Eye frame: Square, Square Rounded, Rounded, Circle, Leaf
 - Eye ball: Square, Square Rounded, Rounded, Circle, Diamond

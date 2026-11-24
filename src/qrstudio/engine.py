@@ -38,7 +38,7 @@ class Design:
     logo_axis: str = "Width"
     wide_logo: bool = False
     reserve_logo: bool = True
-    logo_padding: int = 2
+    logo_padding: int = 1
     background_mode: str = "Plain"
     background: str = "#FFFFFF"
     background_end: str = "#E6DFFF"
@@ -103,8 +103,10 @@ def png_bytes(img: Image.Image) -> bytes:
 
 
 @lru_cache(maxsize=48)
-def qr_matrix(url: str, compact: bool = False):
-    correction = qrcode.constants.ERROR_CORRECT_M if compact else qrcode.constants.ERROR_CORRECT_H
+def qr_matrix(url: str, compact: bool = False, with_logo: bool = False):
+    # Minimalist must remain active after importing artwork. Q keeps more
+    # redundancy for a logo than M, while still reducing density relative to H.
+    correction = (qrcode.constants.ERROR_CORRECT_Q if with_logo else qrcode.constants.ERROR_CORRECT_M) if compact else qrcode.constants.ERROR_CORRECT_H
     qr = qrcode.QRCode(error_correction=correction, border=0)
     qr.add_data(url.strip(), optimize=0)
     try:
@@ -236,8 +238,8 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
     vector_preview = fmt == "PREVIEW"
     if fmt not in FORMATS and not vector_preview:
         raise ValueError("Choose PNG, SVG, PDF or JPG.")
-    compact = d.minimalist and not d.logo
-    matrix, functional, version = qr_matrix(d.url, compact)
+    compact = d.minimalist
+    matrix, functional, version = qr_matrix(d.url, compact, bool(d.logo))
     n = len(matrix)
     units = n+8
     output_size = preview_size or d.resolution
@@ -346,6 +348,8 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
     if geo and (d.logo_scale>25 or geo[2]*geo[3]/n**2>.08):
         notes.append("Large logos can reduce readability. Test a printed sample or reduce the logo scale.")
     if geo:
+        if compact:
+            notes.append("Minimalist with a logo uses error correction Q. Keep the logo and its padding small; use Regular mode if the exported QR does not scan.")
         if any(alignment_under_logo(x,y) for x,y in alignments):
             notes.append("The reserved logo area covers a central alignment marker. Reduce the logo size and test the exported QR on its final surface.")
         effective = (geo[2] if d.logo_axis == "Width" else geo[3]) / n * 100
@@ -353,7 +357,10 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
             notes.append(f"Logo auto-fitted to {effective:.1f}% {d.logo_axis.lower()} while preserving its original aspect ratio.")
     if n*8>output_size:
         notes.append("This URL creates a dense QR. Choose a higher resolution for sharp modules.")
-    meta = {"version":version,"modules":n,"ecc":"M (~15%)" if compact else "H (~30%)","warnings":notes,"contrast":round(contrast,1),"width":output_size,"height":output_size}
+    regular_n = len(qr_matrix(d.url)[0]) if compact else n
+    ecc = ("Q (~25%)" if d.logo else "M (~15%)") if compact else "H (~30%)"
+    meta = {"version":version,"modules":n,"ecc":ecc,"mode":"Minimalist" if compact else "Regular",
+            "regular_modules":regular_n,"warnings":notes,"contrast":round(contrast,1),"width":output_size,"height":output_size}
     if vector_preview:
         return {"background":png_bytes(bg), "logo":logo_overlay, "ops":shapes.ops, "units":units,
                 "color":d.color, "color_end":d.color_end if d.color_mode=="Gradient" else d.color,

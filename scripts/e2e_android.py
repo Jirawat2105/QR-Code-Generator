@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import time
+import tomllib
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -18,13 +19,14 @@ import zxingcpp
 import resvg_py
 import pypdfium2 as pdfium
 from PIL import Image
-from e2e_logo import LOGO_URL, make_logo, assert_intact_logo
+from e2e_logo import LOGO_URL, make_logo, assert_intact_logo, assert_qr_state
 
 ADB=shutil.which("adb")
 PACKAGE="com.muphoto.muphoto_qr_studio"
 OUT=Path("test-results/android")
 OUT.mkdir(parents=True,exist_ok=True)
 URL=LOGO_URL
+RUN_ID=str(time.time_ns())
 
 
 def adb(*args,binary=False,timeout=40):
@@ -124,6 +126,67 @@ def select_shape(section, shape):
     raise AssertionError(f"Could not select {shape} in {section}")
 
 
+def set_switch(label, enabled):
+    scroll_to(label)
+    tree=dump()
+    switches=[node for node in tree.iter("node") if node.get("checkable")=="true"
+              and label in (node.get("content-desc","")+node.get("text",""))]
+    assert len(switches)==1,f"Expected one native switch: {label}"
+    if (switches[0].get("checked")=="true") != enabled:
+        tap_node(switches[0])
+    time.sleep(.5)
+
+
+def save_document(filename, local_name):
+    """Use a unique system-picker filename, then pull exactly this run's file.
+
+    Reusing a list of Downloads names could accidentally validate an older
+    successful export and hide a regression in the newly installed APK.
+    """
+    time.sleep(1)
+    tree=dump()
+    fields=[node for node in tree.iter("node") if node.get("class")=="android.widget.EditText"
+            and node.get("enabled")=="true"]
+    assert len(fields)==1,"Android Save dialog must expose its filename field"
+    node=fields[0]
+    tap_node(node)
+    adb("shell","input","keyevent","123")
+    if node.get("text"):
+        adb("shell","input","keyevent",*(["67"]*len(node.get("text"))))
+    adb("shell","input","text",filename)
+    save=find("SAVE",exact=True)
+    if save is None: save=find("Save",exact=True)
+    assert save is not None,"Native document Save button must be visible"
+    tap_node(save)
+    remote="/sdcard/Download/"+filename
+    for _ in range(25):
+        try:
+            adb("shell","test","-s",remote)
+            break
+        except RuntimeError:
+            time.sleep(.4)
+    else:
+        raise AssertionError(f"This run's export was not written: {filename}")
+    path=OUT/local_name
+    adb("pull",remote,str(path))
+    return path.read_bytes()
+
+
+def check_bundle(data,ecc,modules):
+    with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+        assert len(bundle.namelist())==4
+        for fmt in ("png","jpg","svg","pdf"):
+            item=bundle.read(f"qr-generator-2048.{fmt}")
+            if fmt=="svg": item=resvg_py.svg_to_bytes(svg_string=item.decode())
+            if fmt=="pdf":
+                with pdfium.PdfDocument(item) as document:
+                    buffer=io.BytesIO()
+                    document[0].render(scale=300/72).to_pil().save(buffer,"PNG")
+                    item=buffer.getvalue()
+            assert_qr_state(item,URL,ecc,modules)
+            assert_intact_logo(item)
+
+
 def run():
     assert ADB,"Install Android platform-tools (adb) first."
     devices=adb("devices")
@@ -144,6 +207,8 @@ def run():
     assert apk_path,"Build the QRGenerator APK for this ABI first, or set QR_APK_PATH."
     print(adb("install","-r",apk_path,timeout=120),flush=True)
     assert PACKAGE in adb("shell","pm","list","packages",PACKAGE),"Build/install the APK first."
+    expected_version=tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    assert "versionName="+expected_version in adb("shell","dumpsys","package",PACKAGE),"Installed APK must match this source version"
     adb("shell","am","force-stop",PACKAGE)
     adb("shell","am","start","-n",PACKAGE+"/.MainActivity")
     wait_scan("https://example.com","01-native-preview.png")
@@ -203,71 +268,30 @@ def run():
     wait_scan(URL,"02-updated-preview.png")
     assert_intact_logo((OUT/"02-updated-preview.png").read_bytes())
     print("PASS: native URL entry and preview update decoded",flush=True)
-    # Use Android's real document provider; select the default Downloads location.
+    # Every export is saved under a unique, observed system-dialog filename.
     tap_node(scroll_to("Export QR code"))
-    time.sleep(2)
-    save=find("SAVE",exact=True)
-    if save is None:
-        save=find("Save",exact=True)
-    if save is None:
-        screenshot("save-dialog.png")
-        raise AssertionError("Android system save dialog was not displayed")
-    tap_node(save)
-    time.sleep(2)
-    # If a previous run wrote the same name, confirm only this test's overwrite.
-    tree=dump()
-    replace=find("Replace",tree,exact=True)
-    if replace is None:
-        replace=find("REPLACE",tree,exact=True)
-    if replace is not None:
-        tap_node(replace)
-        time.sleep(1)
-    files=adb("shell","find","/sdcard/Download","-maxdepth","1","-name","qr-generator-2048*.png").splitlines()
-    assert files,"Native export was not saved in Downloads"
-    latest=files[-1]
-    path=OUT/"native-export.png"
-    adb("pull",latest,str(path))
-    assert Image.open(path).size==(2048,2048)
-    assert scan(path.read_bytes())==URL
-    assert_intact_logo(path.read_bytes())
+    png=save_document(f"qr-e2e-{RUN_ID}-regular.png","native-export.png")
+    assert Image.open(io.BytesIO(png)).size==(2048,2048)
+    assert_qr_state(png,URL,"H",49)
+    assert_intact_logo(png)
     screenshot("03-native-export.png")
-    print("PASS: Android system Save dialog and exported PNG decoded",flush=True)
+    print("PASS: native Save dialog; fresh PNG decoded as H/49",flush=True)
     tap_node(scroll_to("Export all formats (.zip)"))
-    time.sleep(2)
-    save=find("SAVE",exact=True)
-    if save is None:
-        save=find("Save",exact=True)
-    assert save is not None,"Native all-format ZIP save dialog must open"
-    tap_node(save)
-    time.sleep(2)
-    replace=find("Replace",exact=True)
-    if replace is None:
-        replace=find("REPLACE",exact=True)
-    if replace is not None:
-        tap_node(replace)
-        time.sleep(1)
-    bundles=adb("shell","find","/sdcard/Download","-maxdepth","1","-name","qr-generator-all*.zip").splitlines()
-    assert bundles,"Native multicore ZIP export must be saved"
-    bundle_path=OUT/"native-all.zip"
-    adb("pull",bundles[-1],str(bundle_path))
-    with zipfile.ZipFile(bundle_path) as bundle:
-        assert len(bundle.namelist())==4
-        for fmt in ("png","jpg","svg","pdf"):
-            data=bundle.read(f"qr-generator-2048.{fmt}")
-            if fmt=="svg":
-                data=resvg_py.svg_to_bytes(svg_string=data.decode())
-            if fmt=="pdf":
-                with pdfium.PdfDocument(data) as doc:
-                    image=doc[0].render(scale=300/72).to_pil()
-                    result=zxingcpp.read_barcode(image)
-                    assert result and result.text==URL
-                    buffer=io.BytesIO()
-                    image.save(buffer,"PNG")
-                    assert_intact_logo(buffer.getvalue())
-            else:
-                assert scan(data)==URL,f"Native {fmt} export must scan"
-                assert_intact_logo(data)
-    print("PASS: Android four-worker ZIP export; PNG/JPG/SVG/PDF independently decoded",flush=True)
+    regular_bundle=save_document(f"qr-e2e-{RUN_ID}-regular.zip","native-all.zip")
+    check_bundle(regular_bundle,"H",49)
+    print("PASS: fresh Regular PNG/JPG/SVG/PDF decoded as H/49",flush=True)
+    tap("Customize",exact=True)
+    time.sleep(.8)
+    set_switch("Minimalist QR",True)
+    tap("Preview & export",exact=True)
+    time.sleep(.8)
+    wait_scan(URL,"05-native-minimal-logo.png")
+    assert_qr_state((OUT/"05-native-minimal-logo.png").read_bytes(),URL,"Q",41)
+    assert_intact_logo((OUT/"05-native-minimal-logo.png").read_bytes())
+    tap_node(scroll_to("Export all formats (.zip)"))
+    minimal_bundle=save_document(f"qr-e2e-{RUN_ID}-minimal.zip","native-minimal-all.zip")
+    check_bundle(minimal_bundle,"Q",41)
+    print("PASS: Minimalist logo preview + all four fresh exports decoded as Q/41",flush=True)
     if adb("shell","getprop","ro.kernel.qemu").strip()=="1":
         auto=adb("shell","settings","get","system","accelerometer_rotation").strip()
         rotation=adb("shell","settings","get","system","user_rotation").strip()
@@ -279,6 +303,7 @@ def run():
             time.sleep(2)
             wait_scan(URL,"04-native-landscape.png")
             assert_intact_logo((OUT/"04-native-landscape.png").read_bytes())
+            assert_qr_state((OUT/"04-native-landscape.png").read_bytes(),URL,"Q",41)
             tree=dump()
             preview=find("Live QR preview",tree,exact=True)
             controls=find("Destination URL",tree)
@@ -288,6 +313,21 @@ def run():
         finally:
             adb("shell","settings","put","system","user_rotation",rotation)
             adb("shell","settings","put","system","accelerometer_rotation",auto)
+    tap("Customize",exact=True)
+    time.sleep(.8)
+    tap_node(scroll_to("Remove logo"))
+    tap("Preview & export",exact=True)
+    time.sleep(.8)
+    wait_scan(URL,"06-native-minimal-no-logo.png")
+    assert_qr_state((OUT/"06-native-minimal-no-logo.png").read_bytes(),URL,"M",37)
+    tap("Customize",exact=True)
+    time.sleep(.8)
+    set_switch("Minimalist QR",False)
+    tap("Preview & export",exact=True)
+    time.sleep(.8)
+    wait_scan(URL,"07-native-regular-restored.png")
+    assert_qr_state((OUT/"07-native-regular-restored.png").read_bytes(),URL,"H",49)
+    print("PASS: removing logo retains Minimalist M/37; OFF restores H/49",flush=True)
     report={"result":"PASS","device":adb("shell","getprop","ro.product.model").strip(),
             "android":adb("shell","getprop","ro.build.version.release").strip(),
             "sdk":adb("shell","getprop","ro.build.version.sdk").strip(),
@@ -298,7 +338,10 @@ def run():
                          "Logo opens creator credits", "Android double-space URL shortcut",
                          "Landscape: GPU preview left, Customize right", "Four-worker ZIP export: all four formats decoded",
                          "Real Android document picker logo import", "49x49 QR: intact logo pixels in portrait/landscape GPU preview and all four exports",
-                         "Square Rounded body, eye frame and eye ball selected natively"]}
+                         "Square Rounded body, eye frame and eye ball selected natively",
+                         "Minimalist with logo: actual Q/41 preview and all four exports",
+                         "Logo removal keeps Minimalist M/37; OFF restores Regular H/49",
+                         "Unique system Save filenames prevent stale Downloads from passing"]}
     (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report,indent=2))
 

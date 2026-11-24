@@ -155,7 +155,7 @@ class Studio:
                        keyboard_type=ft.KeyboardType.URL,autocorrect=False,enable_suggestions=False,
                        on_blur=self.complete_url_field)
         link_card=self.card("01","Where should it go?","A website, a portfolio, a memory. Start with your link.",[
-            url,self.toggle("minimalist","Minimalist QR","Fewer modules when possible. Every style stays editable.")])
+            url,self.toggle("minimalist","Minimalist QR","Fewer modules, with or without a logo. Every style stays editable.")])
         shape_card=self.card("02","Find your shape","The little details make it yours.",[
             self.shape_picker("body","Body shape",BODY_SHAPES),
             self.shape_picker("eye_frame","Eye frame",FRAME_SHAPES),
@@ -177,7 +177,7 @@ class Studio:
             self.slider("angle","Gradient direction",0,360,"°")])
         logo_buttons=ft.Row([ft.OutlinedButton("Choose logo",icon=ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED,
                                               on_click=self.pick_logo,key="choose-logo",expand=True),
-                             ft.IconButton(icon=ft.Icons.CLOSE_ROUNDED,tooltip="Remove logo",on_click=self.remove_logo,key="remove-logo")])
+                             ft.IconButton(icon=ft.Icon(ft.Icons.CLOSE_ROUNDED,semantics_label="Remove logo"),tooltip="Remove logo",on_click=self.remove_logo,key="remove-logo")])
         logo_card=self.card("04","Make it recognizably you","Your original logo. No cropping. No stretching.",[
             logo_buttons,self.logo_name,
             self.dropdown("logo_axis","Scale relative to QR",["Width","Height"]),
@@ -259,7 +259,7 @@ class Studio:
                            padding=ft.Padding.symmetric(horizontal=28,vertical=22))
         self.footer=ft.Container(ft.Row([ft.Icon(ft.Icons.LOCK_OUTLINE_ROUNDED,size=12,color=MUTED),
                                     text("Made on your device · works offline",10,MUTED),ft.Container(expand=True),
-                                    text("QR Generator / 1.1.1",10,MUTED)],spacing=6),
+                                    text("QR Generator / 1.1.2",10,MUTED)],spacing=6),
                             padding=ft.Padding.symmetric(horizontal=28,vertical=12))
         self.mobile_nav=ft.Container(ft.Row([
             ft.TextButton("Customize",icon=ft.Icons.TUNE_ROUNDED,on_click=self.jump_customize,expand=True),
@@ -423,7 +423,8 @@ class Studio:
             self.meta=meta
             self.valid=True
             self.status.content.value="LIVE PREVIEW"
-            self.preview_meta.value=f"{meta['modules']} × {meta['modules']} modules  ·  Error correction {meta['ecc']}"
+            regular=f" (Regular: {meta['regular_modules']} × {meta['regular_modules']})" if meta['mode']=="Minimalist" else ""
+            self.preview_meta.value=f"{meta['mode']} · {meta['modules']} × {meta['modules']} modules{regular}  ·  Error correction {meta['ecc']}"
             self.warning.value="\n".join(meta["warnings"])
             self.warning.visible=bool(meta["warnings"])
             self.error.visible=False

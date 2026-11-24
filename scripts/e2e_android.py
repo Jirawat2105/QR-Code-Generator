@@ -4,6 +4,7 @@ Requires a running Android emulator/device, adb, Pillow and ZXing-C++.
 Uses the real embedded Python renderer and exported files, with no mocks.
 """
 import io
+import colorsys
 import json
 import os
 import re
@@ -53,13 +54,13 @@ def tap_node(node):
     adb("shell","input","tap",str((x1+x2)//2),str((y1+y2)//2))
 
 
-def find(label,tree=None,exact=False):
+def find(label,tree=None,exact=False,include_disabled=False):
     if tree is None:
         tree=dump()
     for node in tree.iter("node"):
         for field in ("text","content-desc","hint"):
             value=node.get(field,"")
-            if (value==label if exact else label in value) and node.get("enabled")=="true":
+            if (value==label if exact else label in value) and (include_disabled or node.get("enabled")=="true"):
                 return node
     return None
 
@@ -91,10 +92,10 @@ def wait_scan(expected,name):
     raise AssertionError(f"Native live preview did not decode to {expected}")
 
 
-def scroll_to(label,direction="down",tries=24):
+def scroll_to(label,direction="down",tries=24,include_disabled=False):
     w,h=map(int,re.findall(r"\d+",adb("shell","wm","size"))[-2:])
     for _ in range(tries):
-        node=find(label)
+        node=find(label,include_disabled=include_disabled)
         if node is not None:
             x1,y1,x2,y2=bounds(node)
             if y1>h*.1 and y2<h*.84:
@@ -187,6 +188,89 @@ def check_bundle(data,ecc,modules):
             assert_intact_logo(item)
 
 
+def select_dropdown(label,value):
+    tap_node(scroll_to(label))
+    time.sleep(.4)
+    tap(value,exact=True)
+    time.sleep(.5)
+
+
+def edit_field(label,value):
+    node=find(label)
+    assert node is not None,f"Editable field not found: {label}"
+    tap_node(node)
+    adb("shell","input","keyevent","123")
+    if node.get("text"):
+        adb("shell","input","keyevent",*(["67"]*len(node.get("text"))))
+    adb("shell","input","text",value)
+    time.sleep(.3)
+
+
+def feature_checks():
+    for shape in ("Octagon","Hexagon"):
+        tap("Customize",exact=True)
+        time.sleep(.8)
+        for section in ("Body shape","Eye frame","Eye ball"): select_shape(section,shape)
+        tap("Preview & export",exact=True)
+        time.sleep(.8)
+        wait_scan(URL,"native-"+shape.lower()+".png")
+        assert_qr_state((OUT/("native-"+shape.lower()+".png")).read_bytes(),URL,"H",49)
+    print("PASS: native Octagon and Hexagon body/frame/ball GPU previews independently decoded",flush=True)
+    tap("Customize",exact=True)
+    time.sleep(.8)
+    select_dropdown("Ink color picker","Advanced")
+    assert find("Advanced ink color",exact=True) is not None
+    edit_field("Hex color","ZZZZZZ")
+    apply=find("Apply color",exact=True,include_disabled=True)
+    assert apply is not None and apply.get("enabled")=="false"
+    tap("Cancel",exact=True)
+    tap_node(scroll_to("Pick ink color"))
+    hue=find("Hue strip",exact=True)
+    square=find("Saturation and brightness",exact=True)
+    assert hue is not None and square is not None
+    x1,y1,x2,y2=bounds(hue)
+    adb("shell","input","tap",str((x1+x2)//2),str(round(y1+(y2-y1)*.25)))
+    x1,y1,x2,y2=bounds(square)
+    adb("shell","input","swipe",str(round(x1+(x2-x1)*.3)),str(round(y1+(y2-y1)*.3)),
+        str(round(x1+(x2-x1)*.75)),str(round(y1+(y2-y1)*.65)),"650")
+    time.sleep(.5)
+    color=find("Hex color").get("text","").lstrip("#")
+    rgb=[int(color[i:i+2],16)/255 for i in (0,2,4)]
+    h,s,v=colorsys.rgb_to_hsv(*rgb)
+    assert abs(h*360-90)<4 and abs(s-.75)<.04 and abs(v-.35)<.04,(h,s,v)
+    screenshot("native-advanced-picker.png")
+    if adb("shell","getprop","ro.kernel.qemu").strip()=="1":
+        auto=adb("shell","settings","get","system","accelerometer_rotation").strip()
+        rotation=adb("shell","settings","get","system","user_rotation").strip()
+        before=find("Hex color").get("text","")
+        try:
+            adb("shell","settings","put","system","accelerometer_rotation","0")
+            adb("shell","settings","put","system","user_rotation","1")
+            time.sleep(1.5)
+            plane=find("Saturation and brightness",exact=True)
+            assert plane is not None and bounds(plane)[3]-bounds(plane)[1]<350
+            screenshot("native-picker-landscape.png")
+        finally:
+            adb("shell","settings","put","system","user_rotation",rotation)
+            adb("shell","settings","put","system","accelerometer_rotation",auto)
+        time.sleep(1)
+        assert find("Hex color").get("text","")==before,"Rotation must preserve the draft"
+    edit_field("Hex color","14283C")
+    tap("Apply color",exact=True)
+    select_dropdown("Background color picker","Advanced")
+    edit_field("Hex color","F8F8F8")
+    tap("Apply color",exact=True)
+    tap("Preview & export",exact=True)
+    time.sleep(.8)
+    wait_scan(URL,"native-advanced-colors.png")
+    tap_node(scroll_to("Export QR code"))
+    data=save_document(f"qr-e2e-{RUN_ID}-advanced.png","native-advanced-export.png")
+    assert_qr_state(data,URL,"H",49)
+    pixels=Image.open(io.BytesIO(data)).convert("RGB").get_flattened_data()
+    assert pixels.count((20,40,60))>1000 and pixels.count((248,248,248))>1000
+    print("PASS: native Advanced picker touch gestures, invalid HEX/Cancel and applied ink/background in fresh export",flush=True)
+
+
 def run():
     assert ADB,"Install Android platform-tools (adb) first."
     devices=adb("devices")
@@ -224,6 +308,18 @@ def run():
     # Jump through the actual bottom navigation and enter a different URL.
     tap("Customize",exact=True)
     time.sleep(.8)
+    tap_node(scroll_to("Clear URL"))
+    tree=dump()
+    url_node=find("Destination URL",tree)
+    assert url_node is not None and url_node.get("text","")==""
+    tap("Collapse Where should it go?")
+    assert find("Destination URL") is None
+    tap("Expand Where should it go?")
+    tap("Preview & export",exact=True)
+    disabled=scroll_to("Export QR code",include_disabled=True)
+    assert disabled.get("enabled")=="false"
+    tap("Customize",exact=True)
+    time.sleep(.8)
     node=scroll_to("Destination URL")
     tap_node(node)
     # Android IMEs vary in their handling of synthetic Ctrl+A. Clear using
@@ -238,6 +334,7 @@ def run():
     assert edited is not None and edited.get("text")==URL,"Android double-space must add https:// before blur"
     adb("shell","input","keyevent","4") # close keyboard
     time.sleep(.8)
+    feature_checks()
     tap("Customize",exact=True)
     time.sleep(.8)
     for label in ("Body shape", "Eye frame", "Eye ball"):
@@ -341,7 +438,12 @@ def run():
                          "Square Rounded body, eye frame and eye ball selected natively",
                          "Minimalist with logo: actual Q/41 preview and all four exports",
                          "Logo removal keeps Minimalist M/37; OFF restores Regular H/49",
-                         "Unique system Save filenames prevent stale Downloads from passing"]}
+                         "Unique system Save filenames prevent stale Downloads from passing",
+                         "Red in-field URL clear and collapsed invalid URL keep export blocked",
+                         "Octagon and Hexagon selected for body/frame/ball; native GPU previews decoded",
+                         "Advanced ink picker: native hue/SV touch, invalid HEX, Cancel and Apply",
+                         "Advanced background picker: selected color verified in a fresh exported PNG",
+                         "Advanced picker adapts during landscape rotation and preserves its draft"]}
     (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report,indent=2))
 

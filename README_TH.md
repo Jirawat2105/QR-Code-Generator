@@ -1,4 +1,4 @@
-# QR Generator 1.1.2
+# QR Generator 1.2.0
 
 Python GUI สร้าง QR สำหรับ Windows และ Android ธีมมืด พร้อมพรีวิวสด ทำงานภายในอุปกรณ์ ไม่ต้องสมัครสมาชิก และไม่สร้างลิงก์ redirect ที่หมดอายุ
 
@@ -39,13 +39,21 @@ uv run flet run src/main.py
 - URL บางตัวใช้จำนวนช่องเท่ากันใน Q และ H ได้ แต่โหมดที่เลือกยังมีผล ดูชื่อโหมดและระดับที่พรีวิวแสดง
 - ค่าเริ่มต้นช่องว่างรอบโลโก้เป็น 1 module หากโลโก้หรือช่องว่างใหญ่เกินไป ให้ลดขนาดหรือปิด Minimalist แล้วทดสอบไฟล์ส่งออกใหม่
 
+## เมนูและการเลือกสี
+
+- กากบาทสีแดงด้านขวาในช่อง URL ใช้ล้างลิงก์ได้ทันที โดยจะปิดการส่งออกจนกรอก URL ที่ใช้ได้
+- กดลูกศรขวาบนแต่ละเมนูเพื่อย่อให้เหลือหัวข้อ กดอีกครั้งเพื่อขยาย ค่าที่ตั้งไว้ยังคงอยู่ และการย่อเมนูไม่ทำให้ค่าที่ผิดผ่านการตรวจสอบ
+- Rounded ถูกแทนด้วย Octagon และ Hexagon ใน Body / Eye frame / Eye ball โดยยังมี Square Rounded ให้เลือก
+- ในเมนูสี เลือก **Ink color picker → Advanced** หรือ **Background color picker → Advanced** เพื่อเปิดแผงเลือกสี ลากพื้นที่ความอิ่มสี–ความสว่างและแถบ Hue หรือกรอก HEX/RGB/HSV แล้วกด **Apply color**
+- **Cancel** ไม่เปลี่ยนสีเดิม ใช้ปุ่ม **Pick ... color** เพื่อเปิดอีกครั้ง ในโหมด Gradient จะมีปุ่มเลือกสีปลายทางด้วย ส่วน Opacity ของพื้นหลังยังปรับได้ตามเดิม
+
 ## ความสามารถ
 
 - บังคับ URL แบบ HTTP/HTTPS และตรวจค่าก่อนส่งออก
 - Minimalist ลดจำนวนโมดูลเมื่อทำได้ โดยยังปรับรูปทรง/สี/โลโก้ได้ทั้งหมด ใช้ error correction M เมื่อไม่มีโลโก้ และ Q เมื่อมีโลโก้ โดยโหมดปกติใช้ H และพรีวิวแสดงโหมดกับจำนวนช่องจริงเทียบกับโหมดปกติ
-- Body: Square, Square Rounded, Rounded, Dots, Diamond, Horizontal
-- Eye frame: Square, Square Rounded, Rounded, Circle, Leaf
-- Eye ball: Square, Square Rounded, Rounded, Circle, Diamond
+- Body: Square, Square Rounded, Octagon, Hexagon, Dots, Diamond, Horizontal
+- Eye frame: Square, Square Rounded, Octagon, Hexagon, Circle, Leaf
+- Eye ball: Square, Square Rounded, Octagon, Hexagon, Circle, Diamond
 - สี QR แบบ Plain / Gradient, พาเลตสี, hex และมุมไล่สี
 - โลโก้ PNG / JPG / WebP แบบไม่ครอป ไม่ยืด ไม่บีบ; เลือกอ้างอิง Width หรือ Height และปรับเปอร์เซ็นต์
 - เปิด/ปิดพื้นที่ว่างใต้โลโก้ และปรับ padding; โลโก้แสดงครบโดยไม่เจาะช่องให้ QR ทะลุ โลโก้ที่ทับจุดจัดแนวตรงกลางจะแสดงคำแนะนำให้ทดสอบสแกน

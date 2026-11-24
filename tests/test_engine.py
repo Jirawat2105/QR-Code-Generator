@@ -183,6 +183,37 @@ def test_each_shape_scans_in_minimalist_with_default_logo(field,value):
     assert decode(data)==d.url,(field,value)
 
 
+@pytest.mark.parametrize("shape",["Octagon","Hexagon"])
+@pytest.mark.parametrize("field",["body","eye_frame","eye_ball"])
+@pytest.mark.parametrize("fmt",["PNG","SVG","JPG","PDF"])
+def test_polygon_shapes_export_and_scan(shape,field,fmt):
+    d=replace(Design(url="https://example.com/"+"a"*50,resolution=1024,minimalist=True),**{field:shape})
+    data,_=render(d,fmt)
+    if fmt=="SVG": data=resvg_py.svg_to_bytes(svg_string=data.decode())
+    if fmt=="PDF":
+        with pdfium.PdfDocument(data) as document:
+            qr=zxingcpp.read_barcode(document[0].render(scale=300/72).to_pil())
+    else: qr=zxingcpp.read_barcode(Image.open(io.BytesIO(data)))
+    assert qr and qr.text==d.url
+
+
+@pytest.mark.parametrize("hex_value,rgb,hue",[("#FF0000",(255,0,0),0),("00FF00",(0,255,0),120),
+    ("#0000ff",(0,0,255),240),("#FE6703",(254,103,3),23.9),("#FFFFFF",(255,255,255),0),
+    ("#000000",(0,0,0),0)])
+def test_advanced_color_rgb_hsv_roundtrip(hex_value,rgb,hue):
+    from qrstudio.colors import ColorState
+    state=ColorState.from_hex(hex_value)
+    assert state.rgb==rgb
+    assert state.hue==pytest.approx(hue,abs=.1)
+    assert ColorState.from_rgb(*state.rgb).hex=="#"+hex_value.lstrip("#").upper()
+
+
+@pytest.mark.parametrize("value",["","#FFF","#GGFF00","#FF000000","12345","#12 345"])
+def test_advanced_color_rejects_invalid_hex(value):
+    from qrstudio.colors import ColorState
+    with pytest.raises(ValueError): ColorState.from_hex(value)
+
+
 @pytest.mark.parametrize("url",["","hello","ftp://example.com","https://","https://a b.com","https://[bad","https://example.com:bad"])
 def test_url_required(url):
     with pytest.raises(ValueError):
@@ -274,7 +305,7 @@ def test_transparent_logo_reservation_clears_entire_central_alignment():
 def test_square_rounded_wide_wordmark_reference(fmt, axis):
     # Reference has separate rounded squares and a wide, proportional wordmark.
     logo = Image.new("RGBA", (1200,280) if axis=="Width" else (280,1200), "#19C47D")
-    d = Design(url="https://drive.google.com/drive/folders/1bWbuhVT6bIO7LRGfXdDzCE1iOuKiJ6Uj",
+    d = Design(url="https://example.com/"+"a"*50,
                body="Square Rounded", eye_frame="Square Rounded", eye_ball="Square Rounded",
                logo=png_bytes(logo), logo_axis=axis, logo_scale=70, wide_logo=True, logo_padding=1,
                color="#000000", background_rounding=0, resolution=1600)

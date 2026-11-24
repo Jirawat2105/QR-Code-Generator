@@ -9,7 +9,7 @@ import math
 import flet as ft
 import flet.canvas as cv
 
-from .engine import png_bytes
+from .engine import png_bytes, polygon_points
 from PIL import Image
 
 K = .5522847498307936
@@ -30,16 +30,16 @@ def contour(kind,x,y,w,h,filled=True):
         curve((cx+rx,cy),(cx+rx,cy+ry*K),(cx+rx*K,cy+ry),(cx,cy+ry))
         curve((cx,cy+ry),(cx-rx*K,cy+ry),(cx-rx,cy+ry*K),(cx-rx,cy))
         curve((cx-rx,cy),(cx-rx,cy-ry*K),(cx-rx*K,cy-ry),(cx,cy-ry))
-    elif kind=="Diamond":
-        pts=[(x+w/2,y),(x+w,y+h/2),(x+w/2,y+h),(x,y+h/2)]
-        for i in range(4):
-            line(pts[i],pts[(i+1)%4])
+    elif kind in ("Diamond","Hexagon","Octagon"):
+        pts=polygon_points(kind,x,y,w,h)
+        for i in range(len(pts)):
+            line(pts[i],pts[(i+1)%len(pts)])
     else:
         # Use logical module dimensions for the same radius in GPU and exports.
         # Square Rounded body cells are inset to .92 modules; finder rings and
         # balls use the gentler radius ratio passed via their geometry kind.
         radius=min(w,h)*(.24 if kind=="Square Rounded Body" else .14 if kind=="Square Rounded" else
-                           .28 if kind=="Rounded" else .45 if kind=="Horizontal" else .35 if kind=="Leaf" else 0)
+                           .45 if kind=="Horizontal" else .35 if kind=="Leaf" else 0)
         tl,tr,br,bl=(0,radius,0,radius) if kind=="Leaf" else (radius,)*4
         a=(x+tl,y)
         line(a,(x+w-tr,y))

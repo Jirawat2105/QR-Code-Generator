@@ -14,9 +14,9 @@ import qrcode
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 from qrcode.exceptions import DataOverflowError
 
-BODY_SHAPES = ("Square", "Square Rounded", "Rounded", "Dots", "Diamond", "Horizontal")
-FRAME_SHAPES = ("Square", "Square Rounded", "Rounded", "Circle", "Leaf")
-BALL_SHAPES = ("Square", "Square Rounded", "Rounded", "Circle", "Diamond")
+BODY_SHAPES = ("Square", "Square Rounded", "Octagon", "Hexagon", "Dots", "Diamond", "Horizontal")
+FRAME_SHAPES = ("Square", "Square Rounded", "Octagon", "Hexagon", "Circle", "Leaf")
+BALL_SHAPES = ("Square", "Square Rounded", "Octagon", "Hexagon", "Circle", "Diamond")
 FORMATS = ("PNG", "SVG", "PDF", "JPG")
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
@@ -26,9 +26,9 @@ Image.MAX_IMAGE_PIXELS = 25_000_000
 class Design:
     url: str = "https://example.com"
     minimalist: bool = False
-    body: str = "Rounded"
-    eye_frame: str = "Rounded"
-    eye_ball: str = "Rounded"
+    body: str = "Square Rounded"
+    eye_frame: str = "Square Rounded"
+    eye_ball: str = "Square Rounded"
     color_mode: str = "Plain"
     color: str = "#172033"
     color_end: str = "#7957D5"
@@ -146,6 +146,18 @@ def logo_geometry(d: Design, n: int):
     return ((n - w) / 2 + 4, (n - h) / 2 + 4, w, h)
 
 
+def polygon_points(kind, x, y, w, h):
+    """Clockwise contours shared by SVG, raster exports and the GPU preview."""
+    if kind == "Hexagon":
+        points = ((.25,0),(.75,0),(1,.5),(.75,1),(.25,1),(0,.5))
+    elif kind == "Octagon":
+        c = 1/(2+math.sqrt(2))
+        points = ((c,0),(1-c,0),(1,c),(1,1-c),(1-c,1),(c,1),(0,1-c),(0,c))
+    else:
+        points = ((.5,0),(1,.5),(.5,1),(0,.5))
+    return [(x+a*w,y+b*h) for a,b in points]
+
+
 class Shapes:
     """One geometry stream feeds both raster masks and real SVG vector shapes."""
     def __init__(self, size: int, units: int, record_only=False):
@@ -169,8 +181,8 @@ class Shapes:
         if kind in ("Circle", "Dots"):
             self.draw.ellipse(box, fill=fill)
             tag = f'<ellipse cx="{x+w/2:.4f}" cy="{y+h/2:.4f}" rx="{w/2:.4f}" ry="{h/2:.4f}" fill="{color}"/>'
-        elif kind == "Diamond":
-            pts = [(x+w/2,y),(x+w,y+h/2),(x+w/2,y+h),(x,y+h/2)]
+        elif kind in ("Diamond", "Hexagon", "Octagon"):
+            pts = polygon_points(kind,x,y,w,h)
             self.draw.polygon([(round(a*s),round(b*s)) for a,b in pts], fill=fill)
             tag = f'<polygon points="{" ".join(f"{a:.4f},{b:.4f}" for a,b in pts)}" fill="{color}"/>'
         elif kind == "Leaf":
@@ -183,7 +195,7 @@ class Shapes:
                    f'H{x+r} A{r},{r} 0 0 1 {x},{y+h-r} Z" fill="{color}"/>')
         else:
             r = min(w,h) * ((.24 if min(w,h)<=1 else .14) if kind == "Square Rounded" else
-                             .28 if kind == "Rounded" else .45 if kind == "Horizontal" else 0)
+                             .45 if kind == "Horizontal" else 0)
             self.draw.rounded_rectangle(box, radius=r*s, fill=fill)
             tag = f'<rect x="{x:.4f}" y="{y:.4f}" width="{w:.4f}" height="{h:.4f}" rx="{r:.4f}" fill="{color}"/>'
         self.svg.append(tag)

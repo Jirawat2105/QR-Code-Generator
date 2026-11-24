@@ -12,9 +12,9 @@ Get compiled apps from [GitHub Releases](https://github.com/Jirawat2105/QR-Code-
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [QR Generator 1.1.2 ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.2/QRGenerator-1.1.2-Windows.zip) |
-| Android ARM64 phones | [APK, approximately 29 MB](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.2/QRGenerator-1.1.2-Android-arm64-v8a.apk) |
-| Android x86_64 / emulator | [APK](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.2/QRGenerator-1.1.2-Android-x86_64.apk) |
+| Windows x64 | [QR Generator 1.2.0 ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Windows.zip) |
+| Android ARM64 phones | [APK, approximately 29 MB](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Android-arm64-v8a.apk) |
+| Android x86_64 / emulator | [APK](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Android-x86_64.apk) |
 
 No compiled macOS app is available. macOS has not been built or validated for this release.
 
@@ -29,8 +29,11 @@ Enter an HTTP/HTTPS URL, customize the design, and select **Export QR code** or 
 ## Features
 
 - Clean dark interface with live vector previews.
+- Collapsible setting sections; the chevron leaves only the heading visible without resetting values.
+- Red Clear URL button inside the URL field; an empty URL blocks export.
+- Optional Advanced color pickers for ink and background: hue strip, saturation/brightness square, HEX/RGB/HSV entry, current/new swatches, Apply and Cancel. Choose Advanced in the corresponding color-picker dropdown to open it. Plain/Gradient styles and background opacity remain independent.
 - Preview on the left and Customize on the right on Windows and Android landscape; scrolling portrait layout on Android.
-- Square, Square Rounded (separate softly rounded cells), rounded, dotted, diamond, and horizontal body shapes; selectable eye frames and eye balls.
+- Square, Square Rounded (separate softly rounded cells), Octagon, Hexagon, dotted, diamond, and horizontal body shapes; selectable eye frames and eye balls.
 - Plain or gradient ink; solid, gradient, or image backgrounds with opacity, rounding, and soft edges.
 - Optional logo with width/height percentage scaling. Oversized logos auto-fit without stretching or cropping.
 - Optional reserved logo space with adjustable padding.
@@ -131,7 +134,7 @@ uv run python scripts/e2e_android.py
 
 Set `ANDROID_SERIAL` when multiple devices are connected. The native workflow validates installation, URL entry, actual logo import through Android Files, Square Rounded shape selection, intact logo pixels, system Save dialogs, all-format ZIP export, and emulator rotation. `scripts/e2e_safe_area.py` additionally checks simulated cutouts on a dedicated QA emulator.
 
-Release 1.1.2 passed 100 engine tests, 16 packaged Windows E2E scenarios through local web transport, 16 native Android 17 scenarios (API 37, 16 KB pages), and two simulated cutout layouts. Minimalist tests independently decode the actual error-correction level and grid from previews and all four exports; Android uses unique Save filenames so older Downloads cannot pass as new results. See the release QA report for details. The 49 × 49 QR regression verifies intact artwork pixels in the GPU preview and all four exported formats, in addition to independently decoding the QR. See the release QA report for details. Physical phones, physical printing, and macOS were not tested.
+Release 1.2.0 passed 139 engine tests, 22 packaged Windows UI E2E scenarios through local web transport, 21 native Android 17 scenarios (API 37, 16 KB pages), and two simulated cutouts. It includes raw hue/SV gestures, HEX/RGB/HSV entry, Apply/Cancel, collapsed invalid settings, polygon previews/exports and resizing an open picker. Prior Minimalist/logo regressions still independently decode actual QR data, grid size and error-correction level from previews and PNG/JPG/SVG/PDF exports. See the release QA report for exact scenario counts and platform limits. Physical phones, physical printing, and macOS were not tested.
 
 ## Troubleshooting
 

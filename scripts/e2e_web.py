@@ -80,6 +80,18 @@ def select(page,label,value):
     page.get_by_role("button",name=value,exact=True).click(force=True)
 
 
+def picker_hex(page,value):
+    fill(page,"Hex color",value)
+    rgb=value.lstrip("#")
+    # Wait for server-side HSV/RGB synchronization, not only the browser's
+    # immediate editable text. A fast click can otherwise hit the transient
+    # disabled state while clearing/replacing the old value.
+    for index,label in enumerate(("Red","Green","Blue")):
+        page.get_by_label(label,exact=True).focus()
+        expect(page.locator("input:focus, textarea:focus")).to_have_value(str(int(rgb[index*2:index*2+2],16)))
+    expect(page.get_by_role("button",name="Apply color",exact=True)).to_be_enabled()
+
+
 def set_slider(page,label,readout,fraction):
     heading=page.get_by_text(label,exact=True)
     reveal(page,heading)
@@ -125,6 +137,132 @@ def run():
         page.screenshot(path=OUT/"01-desktop.png")
         assert scan((OUT/"01-desktop.png").read_bytes())=="https://example.com","GPU preview must independently scan"
         assert page.title()=="QR Generator"
+        # Clear from the red suffix button, then collapse the invalid URL card.
+        tap(page,page.get_by_role("button",name="Clear URL"))
+        expect(page.get_by_role("button",name="Export QR code",exact=True)).to_be_disabled()
+        tap(page,page.get_by_role("button",name="Collapse Where should it go?"))
+        expect(page.get_by_label("Destination URL *",exact=True)).not_to_be_visible()
+        expect(page.get_by_role("button",name="Export QR code",exact=True)).to_be_disabled()
+        tap(page,page.get_by_role("button",name="Expand Where should it go?"))
+        fill(page,"Destination URL *","https://example.com")
+        wait_ready(page)
+        for title,control in (("Find your shape",page.get_by_role("button",name="Body shape: Hexagon Hexagon",exact=True)),
+                              ("Set the mood",page.get_by_label("Color",exact=True)),
+                              ("Make it recognizably you",page.get_by_role("button",name="Choose logo",exact=True)),
+                              ("Give it a background",page.get_by_label("Background color",exact=True))):
+            tap(page,page.get_by_role("button",name="Collapse "+title))
+            expect(control).not_to_be_visible()
+            tap(page,page.get_by_role("button",name="Expand "+title))
+            expect(control).to_be_visible()
+        report["scenarios"].append("Red in-field Clear URL invalidates export; all five menus collapse to headers and expand without bypassing validation")
+        assert page.get_by_role("button",name="Body shape: Rounded Rounded",exact=True).count()==0
+        for kind in ("Body shape","Eye frame","Eye ball"):
+            tap(page,page.get_by_role("button",name=f"{kind}: Octagon Octagon",exact=True))
+        wait_ready(page)
+        octagon=save_download(page,"Export QR code",OUT/"octagon.png")
+        assert scan(octagon)=="https://example.com"
+        page.mouse.move(260,400)
+        page.mouse.wheel(0,-2200)
+        page.wait_for_timeout(400)
+        assert scan(page.screenshot(path=OUT/"octagon-preview.png"))=="https://example.com"
+        for kind in ("Body shape","Eye frame","Eye ball"):
+            tap(page,page.get_by_role("button",name=f"{kind}: Hexagon Hexagon",exact=True))
+        wait_ready(page)
+        hexagon=save_download(page,"Export QR code",OUT/"hexagon.png")
+        assert scan(hexagon)=="https://example.com"
+        page.mouse.move(260,400)
+        page.mouse.wheel(0,-2200)
+        page.wait_for_timeout(400)
+        assert scan(page.screenshot(path=OUT/"hexagon-preview.png"))=="https://example.com"
+        report["scenarios"].append("Rounded removed, Square Rounded retained; actual Octagon/Hexagon selection and decoded exports")
+        before=save_download(page,"Export QR code",OUT/"before-advanced.png")
+        select(page,"Ink color picker","Advanced")
+        expect(page.get_by_text("Advanced ink color",exact=True)).to_be_visible()
+        fill(page,"Hex color","invalid")
+        expect(page.get_by_role("button",name="Apply color",exact=True)).to_be_disabled()
+        page.get_by_role("button",name="Cancel",exact=True).click()
+        after=save_download(page,"Export QR code",OUT/"after-cancel.png")
+        assert before==after,"Cancel must not apply a draft or invalid color"
+        tap(page,page.get_by_role("button",name="Pick ink color",exact=True))
+        hue=page.get_by_role("button",name="Hue strip",exact=True).bounding_box()
+        # Flutter's accessibility overlay turns pointer input into a centered
+        # semantic tap. Route this gesture to the real Flutter canvas instead;
+        # restore the overlay immediately for all other accessibility actions.
+        pointer_style=page.add_style_tag(content="flt-semantics, flt-semantics-container { pointer-events: none !important; }")
+        page.mouse.click(hue["x"]+hue["width"]/2,hue["y"]+hue["height"]*.5)
+        square=page.get_by_role("button",name="Saturation and brightness",exact=True).bounding_box()
+        page.mouse.move(square["x"]+square["width"]*.4,square["y"]+square["height"]*.4)
+        page.mouse.down()
+        page.mouse.move(square["x"]+square["width"]*.7,square["y"]+square["height"]*.65,steps=5)
+        page.mouse.up()
+        page.wait_for_timeout(400)
+        pointer_style.evaluate("el => el.remove()")
+        page.screenshot(path=OUT/"advanced-picker.png")
+        page.mouse.move(square["x"]+80,square["y"]+square["height"]+70)
+        page.mouse.wheel(0,240)
+        page.wait_for_timeout(200)
+        for label,expected in (("Hue °",180),("Sat. %",70),("Bright. %",35)):
+            page.get_by_label(label,exact=True).focus()
+            page.wait_for_timeout(120)
+            value=page.locator("input:focus, textarea:focus").input_value()
+            assert abs(float(value)-expected)<3,(label,value)
+        page.get_by_label("Hex color",exact=True).focus()
+        page.wait_for_timeout(120)
+        draft=page.locator("input:focus, textarea:focus").input_value()
+        page.set_viewport_size({"width":844,"height":450})
+        page.wait_for_timeout(800)
+        plane=page.get_by_role("button",name="Saturation and brightness",exact=True).bounding_box()
+        assert plane and plane["height"]<=120 and 0<plane["y"]<plane["y"]+plane["height"]<450
+        page.screenshot(path=OUT/"advanced-landscape.png")
+        page.set_viewport_size({"width":1280,"height":900})
+        page.wait_for_timeout(800)
+        page.get_by_label("Hex color",exact=True).focus()
+        page.wait_for_timeout(120)
+        assert page.locator("input:focus, textarea:focus").input_value()==draft
+        report["scenarios"].append("Advanced picker resizes in landscape with full color plane visible and draft preserved")
+        fill(page,"Red","20")
+        fill(page,"Green","40")
+        fill(page,"Blue","60")
+        page.get_by_label("Hex color",exact=True).focus()
+        page.wait_for_timeout(120)
+        assert page.locator("input:focus, textarea:focus").input_value()=="#14283C"
+        fill(page,"Hue °","240")
+        fill(page,"Sat. %","100")
+        fill(page,"Bright. %","100")
+        page.get_by_label("Hex color",exact=True).focus()
+        page.wait_for_timeout(120)
+        assert page.locator("input:focus, textarea:focus").input_value()=="#0000FF"
+        picker_hex(page,"13243A")
+        page.get_by_role("button",name="Apply color",exact=True).click()
+        wait_ready(page)
+        ink=save_download(page,"Export QR code",OUT/"advanced-ink.png")
+        assert scan(ink)=="https://example.com"
+        assert Image.open(io.BytesIO(ink)).convert("RGB").get_flattened_data().count((19,36,58))>1000
+        report["scenarios"].append("Advanced ink picker: hue/SV pointer gestures, invalid HEX blocked, Cancel unchanged, Apply updates exported ink")
+        select(page,"Background color picker","Advanced")
+        expect(page.get_by_text("Advanced background color",exact=True)).to_be_visible()
+        picker_hex(page,"F8F8F8")
+        page.get_by_role("button",name="Apply color",exact=True).click()
+        wait_ready(page)
+        bg=save_download(page,"Export QR code",OUT/"advanced-bg.png")
+        assert scan(bg)=="https://example.com"
+        assert Image.open(io.BytesIO(bg)).convert("RGB").get_flattened_data().count((248,248,248))>1000
+        report["scenarios"].append("Advanced background picker: exact HEX applies to actual exported background")
+        select(page,"Ink style","Gradient")
+        tap(page,page.get_by_role("button",name="Pick ink end color",exact=True))
+        picker_hex(page,"513A80")
+        page.get_by_role("button",name="Apply color",exact=True).click()
+        wait_ready(page)
+        assert scan(save_download(page,"Export QR code",OUT/"advanced-ink-gradient.png"))=="https://example.com"
+        select(page,"Ink style","Plain")
+        select(page,"Background style","Gradient")
+        tap(page,page.get_by_role("button",name="Pick background end color",exact=True))
+        picker_hex(page,"EAF2E5")
+        page.get_by_role("button",name="Apply color",exact=True).click()
+        wait_ready(page)
+        assert scan(save_download(page,"Export QR code",OUT/"advanced-bg-gradient.png"))=="https://example.com"
+        select(page,"Background style","Plain")
+        report["scenarios"].append("Advanced pickers edit both gradient end colors while retaining Plain/Gradient controls")
         page.get_by_role("button",name="Credits",exact=True).click(force=True)
         expect(page.get_by_text("Jirawat Pratuangtip",exact=True)).to_be_visible()
         expect(page.get_by_text("github.com/Jirawat2105",exact=True)).to_be_visible()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 DIST=ROOT/"dist"
-VERSION="1.1.2"
+VERSION="1.2.0"
 
 
 def main():
@@ -17,7 +17,8 @@ def main():
         f"QR Generator {VERSION}\n\n"
         "Open QRGenerator.exe to start. No Python installation is required.\n"
         "Keep the _internal folder beside the EXE. Extract the whole ZIP before opening.\n\n"
-        "Enter a full http/https URL. Choose your shapes, colors and optional logo.\n"
+        "Enter a full http/https URL. Use the red X to clear it. Choose shapes, colors and an optional logo.\n"
+        "Collapse setting sections with their arrows. Choose Advanced in the ink/background color picker for HSV/RGB/HEX.\n"
         "Logo scale can reference Width or Height, preserving original proportions.\n"
         "Oversized logos automatically fit inside a safe center area.\n"
         "Tab completes https:// in the URL field. Minimalist keeps all styles editable, including with a logo.\n"

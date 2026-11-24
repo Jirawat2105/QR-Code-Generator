@@ -12,8 +12,8 @@ try {
         --add-data "$(Join-Path $projectRoot 'src\assets'):assets" `
             "$(Join-Path $projectRoot '.venv\Lib\site-packages\flet_web\web'):flet_web/web" `
         --distpath (Join-Path $packRoot 'dist') `
-        --product-name 'QR Generator' --product-version 1.1.2 `
-        --file-version 1.1.2.0 --company-name 'Jirawat Pratuangtip'
+        --product-name 'QR Generator' --product-version 1.2.0 `
+        --file-version 1.2.0.0 --company-name 'Jirawat Pratuangtip'
     if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed.' }
     $releaseRoot = Join-Path $projectRoot 'dist'
     New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null

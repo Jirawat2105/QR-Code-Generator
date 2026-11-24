@@ -8,12 +8,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import flet as ft
+import flet.canvas as cv
 
 from .engine import (BALL_SHAPES, BODY_SHAPES, FORMATS, FRAME_SHAPES, Design,
                      normalize_image, png_bytes, render)
 from .workers import render_async
-from .gpu_preview import GPUPreview
+from .gpu_preview import GPUPreview, contour
 from .url_input import complete_url
+from .color_picker import AdvancedColorPicker
 
 BG = "#101113"
 PANEL = "#191B1E"
@@ -50,6 +52,11 @@ class Studio:
         self.bg_name = text("Choose a background image", 11, MUTED)
         self.last_data = None
         self.meta = {}
+        self.sections = {}
+        self.color_picker_modes = {}
+        self.advanced_buttons = {}
+        self.url_cleared = False
+        self.color_picker = None
 
     def field(self, name, label, value=None, **kwargs):
         field = ft.TextField(key=name, label=label, value=str(value if value is not None else getattr(self.design, name)),
@@ -89,7 +96,7 @@ class Studio:
         return ft.Row([ft.Column([text(title,13),text(subtitle,11,MUTED)],spacing=3,expand=True),switch])
 
     def shape_picker(self, name, label, options):
-        icons={"Square":ft.Icons.CROP_SQUARE_ROUNDED,"Rounded":ft.Icons.ROUNDED_CORNER,
+        icons={"Square":ft.Icons.CROP_SQUARE_ROUNDED,
                "Square Rounded":ft.Icons.ROUNDED_CORNER,
                "Dots":ft.Icons.APPS_ROUNDED,"Circle":ft.Icons.CIRCLE_OUTLINED,
                "Diamond":ft.Icons.DIAMOND_OUTLINED,"Leaf":ft.Icons.SPA_OUTLINED,
@@ -101,7 +108,11 @@ class Studio:
                 self.sync_shapes()
                 self.schedule()
             selected=getattr(self.design,name)==option
-            tile=ft.Container(ft.Column([ft.Icon(icons[option],size=22,color=ACCENT if selected else MUTED),
+            color=ACCENT if selected else MUTED
+            icon=(cv.Canvas(shapes=[cv.Path(elements=contour(option,1,1,20,20),
+                      paint=ft.Paint(color=color,style=ft.PaintingStyle.STROKE,stroke_width=2))],width=22,height=22)
+                  if option in ("Octagon","Hexagon") else ft.Icon(icons[option],size=22,color=color))
+            tile=ft.Container(ft.Column([icon,
                                          text(option,10,ACCENT if selected else MUTED)],
                                         spacing=7,horizontal_alignment=ft.CrossAxisAlignment.CENTER),
                               key=f"{name}-{option.lower()}",expand=True,padding=ft.Padding.symmetric(vertical=13,horizontal=3),
@@ -120,15 +131,28 @@ class Studio:
             chosen=getattr(self.design,name)==option
             tile.bgcolor="#293124" if chosen else FIELD
             tile.border=ft.Border.all(1,ACCENT if chosen else LINE)
-            tile.content.controls[0].color=ACCENT if chosen else MUTED
+            icon=tile.content.controls[0]
+            if isinstance(icon,cv.Canvas): icon.shapes[0].paint.color=ACCENT if chosen else MUTED
+            else: icon.color=ACCENT if chosen else MUTED
             tile.content.controls[1].color=ACCENT if chosen else MUTED
 
     def card(self, number, title, subtitle, children):
+        body=ft.Column([text(subtitle,11,MUTED),*children],spacing=17,
+                       horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+        async def toggle_section(e):
+            body.visible=not body.visible
+            label=("Collapse " if body.visible else "Expand ")+title
+            button.icon=ft.Icon(ft.Icons.EXPAND_LESS if body.visible else ft.Icons.EXPAND_MORE,semantics_label=label)
+            button.tooltip=label
+            self.page.update()
+        button=ft.IconButton(ft.Icon(ft.Icons.EXPAND_LESS,semantics_label="Collapse "+title),
+                             tooltip="Collapse "+title,on_click=toggle_section)
+        self.sections[number]=(body,button,title)
         return ft.Container(ft.Column([
             ft.Row([ft.Container(text(number,11,ACCENT),width=27,height=27,alignment=ft.Alignment.CENTER,
                                  bgcolor="#293124",border_radius=8),
-                    text(title,16,weight=ft.FontWeight.W_600)],spacing=10),
-            text(subtitle,11,MUTED), *children],spacing=17,horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+                    text(title,16,weight=ft.FontWeight.W_600,expand=True),button],spacing=10),
+            body],spacing=17,horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             bgcolor=PANEL,border=ft.Border.all(1,LINE),border_radius=16,padding=22)
 
     def color_pair(self, prefix=""):
@@ -138,6 +162,35 @@ class Studio:
         second.visible=False
         row=ft.Row([first,second],spacing=10)
         return row
+
+    def advanced_colors(self,prefix=""):
+        a,b=("color","color_end") if not prefix else ("background","background_end")
+        name="Ink" if not prefix else "Background"
+        async def open_color(field):
+            async def apply(value):
+                self.design=replace(self.design,**{field:value})
+                self.controls[field].value=value
+                self.schedule()
+            self.color_picker=AdvancedColorPicker(self.page,"Advanced "+("ink" if not prefix else "background")+" color",
+                                getattr(self.design,field),apply)
+            self.color_picker.open()
+        async def pick_first(e): await open_color(a)
+        async def pick_second(e): await open_color(b)
+        first=ft.OutlinedButton("Pick "+name.lower()+" color",icon=ft.Icons.PALETTE_OUTLINED,
+                                 on_click=pick_first)
+        second=ft.OutlinedButton("Pick "+name.lower()+" end color",icon=ft.Icons.PALETTE_OUTLINED,
+                                  on_click=pick_second,visible=False)
+        buttons=ft.Column([first,second],visible=False,horizontal_alignment=ft.CrossAxisAlignment.STRETCH,spacing=8)
+        async def select_mode(e):
+            buttons.visible=e.control.value=="Advanced"
+            self.page.update()
+            if buttons.visible: await open_color(a)
+        mode=ft.Dropdown(label=name+" color picker",tooltip=name+" color picker",value="Basic",
+                         options=[ft.DropdownOption("Basic"),ft.DropdownOption("Advanced")],
+                         on_select=select_mode,filled=True,fill_color=FIELD,border_color=LINE,border_radius=10,text_size=13)
+        self.color_picker_modes[prefix]=mode
+        self.advanced_buttons[prefix]=(buttons,second)
+        return ft.Column([mode,buttons],spacing=8)
 
     def build(self):
         p=self.page
@@ -152,6 +205,8 @@ class Studio:
         p.window.min_width=360
         p.window.min_height=680
         url=self.field("url","Destination URL *",hint_text="https://example.com",prefix_icon=ft.Icons.LINK_ROUNDED,
+                       suffix=ft.IconButton(ft.Icon(ft.Icons.CLOSE_ROUNDED,color="#FF6B6B",semantics_label="Clear URL"),
+                                            tooltip="Clear URL",icon_color="#FF6B6B",on_click=self.clear_url),
                        keyboard_type=ft.KeyboardType.URL,autocorrect=False,enable_suggestions=False,
                        on_blur=self.complete_url_field)
         link_card=self.card("01","Where should it go?","A website, a portfolio, a memory. Start with your link.",[
@@ -173,7 +228,7 @@ class Studio:
                                                  border=ft.Border.all(2,"#5D6165"),on_click=choose,
                                                  tooltip=label,key="palette-"+label.lower(),ink=True))
         color_card=self.card("03","Set the mood","Start with a palette, or enter your own hex colors.",[
-            self.dropdown("color_mode","Ink style",["Plain","Gradient"]),palette,self.color_pair(),
+            self.dropdown("color_mode","Ink style",["Plain","Gradient"]),palette,self.color_pair(),self.advanced_colors(),
             self.slider("angle","Gradient direction",0,360,"°")])
         logo_buttons=ft.Row([ft.OutlinedButton("Choose logo",icon=ft.Icons.ADD_PHOTO_ALTERNATE_OUTLINED,
                                               on_click=self.pick_logo,key="choose-logo",expand=True),
@@ -190,7 +245,7 @@ class Studio:
             self.bg_name],visible=False,spacing=7)
         background_card=self.card("05","Give it a background","Solid, gradient or a photo. Transparency is up to you.",[
             self.dropdown("background_mode","Background style",["Plain","Gradient","Image"]),
-            self.color_pair("bg"),self.bg_image_group,
+            self.color_pair("bg"),self.advanced_colors("bg"),self.bg_image_group,
             self.slider("background_opacity","Background opacity",0,100),
             self.slider("background_rounding","Rounded corners",0,25),
             self.slider("edge_blur","Soft edge",0,20),
@@ -259,7 +314,7 @@ class Studio:
                            padding=ft.Padding.symmetric(horizontal=28,vertical=22))
         self.footer=ft.Container(ft.Row([ft.Icon(ft.Icons.LOCK_OUTLINE_ROUNDED,size=12,color=MUTED),
                                     text("Made on your device · works offline",10,MUTED),ft.Container(expand=True),
-                                    text("QR Generator / 1.1.2",10,MUTED)],spacing=6),
+                                    text("QR Generator / 1.2.0",10,MUTED)],spacing=6),
                             padding=ft.Padding.symmetric(horizontal=28,vertical=12))
         self.mobile_nav=ft.Container(ft.Row([
             ft.TextButton("Customize",icon=ft.Icons.TUNE_ROUNDED,on_click=self.jump_customize,expand=True),
@@ -333,12 +388,20 @@ class Studio:
             actions=[ft.TextButton("Close",on_click=lambda e:self.page.pop_dialog())]))
 
     async def complete_url_field(self,e):
+        if self.url_cleared and not self.controls["url"].value: return
         value=complete_url(self.controls["url"].value,commit=True)
         if value!=self.controls["url"].value:
             self.controls["url"].value=value
             self.controls["url"].selection=ft.TextSelection(base_offset=len(value),extent_offset=len(value))
             self.design=replace(self.design,url=value)
             self.schedule()
+
+    async def clear_url(self,e):
+        self.url_cleared=True
+        self.controls["url"].value=""
+        self.controls["url"].selection=ft.TextSelection(base_offset=0,extent_offset=0)
+        self.design=replace(self.design,url="")
+        self.invalidate("Enter a complete URL, for example https://example.com")
 
     async def jump_preview(self,e):
         if self.mobile:
@@ -352,6 +415,8 @@ class Studio:
 
     async def on_resize(self,e):
         self.layout()
+        if self.color_picker and self.color_picker.is_open:
+            self.color_picker.resize()
         self.page.update()
 
     def sync_visibility(self):
@@ -359,6 +424,8 @@ class Studio:
         self.controls["color_end"].visible=d.color_mode=="Gradient"
         self.controls["background_end"].visible=d.background_mode=="Gradient"
         self.bg_image_group.visible=d.background_mode=="Image"
+        for prefix,(_,end) in self.advanced_buttons.items():
+            end.visible=(d.background_mode if prefix else d.color_mode)=="Gradient"
 
     async def change(self,e):
         name=e.control.key
@@ -377,6 +444,7 @@ class Studio:
             if not value.startswith("#"):
                 value="#"+value
         elif name=="url":
+            self.url_cleared=False
             value=complete_url(value)
             if value!=e.control.value:
                 e.control.value=value
@@ -551,6 +619,14 @@ class Studio:
         self.export_status.value=""
         self.logo_name.value="PNG, JPG or WebP · original proportions"
         self.bg_name.value="Choose a background image"
+        self.url_cleared=False
+        for body,button,title in self.sections.values():
+            body.visible=True
+            button.icon=ft.Icon(ft.Icons.EXPAND_LESS,semantics_label="Collapse "+title)
+            button.tooltip="Collapse "+title
+        for prefix,mode in self.color_picker_modes.items():
+            mode.value="Basic"
+            self.advanced_buttons[prefix][0].visible=False
         self.sync_shapes()
         self.sync_visibility()
         self.schedule()

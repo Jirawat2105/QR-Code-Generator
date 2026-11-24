@@ -15,6 +15,7 @@ import pypdfium2 as pdfium
 import zxingcpp
 from PIL import Image, ImageDraw
 from playwright.sync_api import expect, sync_playwright
+from e2e_logo import LOGO_URL, make_logo, assert_intact_logo
 
 OUT=Path("test-results/e2e")
 OUT.mkdir(parents=True,exist_ok=True)
@@ -65,14 +66,34 @@ def fill(page,label,value):
     reveal(page,target)
     target.focus()
     # Flutter uses a separate focused text editor after the semantic node receives focus.
+    editor=page.locator("input:focus, textarea:focus")
+    expect(editor).to_be_attached(timeout=5000)
     page.keyboard.press("Control+A")
+    page.keyboard.press("Backspace")
     page.keyboard.insert_text(value)
+    expect(editor).to_have_value(value)
     page.keyboard.press("Tab")
 
 
 def select(page,label,value):
     tap(page,page.get_by_role("button",name=label,exact=True))
     page.get_by_role("button",name=value,exact=True).click(force=True)
+
+
+def set_slider(page,label,readout,fraction):
+    heading=page.get_by_text(label,exact=True)
+    reveal(page,heading)
+    headingbox=heading.bounding_box()
+    # Flutter bounds describe the thumb. Find the next thumb below this label,
+    # then use the full row edges as the real pointer-input track.
+    boxes=[s.bounding_box() for s in page.get_by_role("slider").all()]
+    box=min((b for b in boxes if b and b["y"]>headingbox["y"]+headingbox["height"]/2),
+            key=lambda b:b["y"])
+    left=headingbox["x"]
+    valuebox=page.get_by_text(readout,exact=True).bounding_box()
+    right=valuebox["x"]+valuebox["width"]
+    page.mouse.click(left+24+(right-left-48)*fraction,box["y"]+box["height"]/2)
+    page.wait_for_timeout(300)
 
 
 def save_download(page,label,path):
@@ -83,7 +104,7 @@ def save_download(page,label,path):
 
 
 def run():
-    report={"scenarios":[],"console_errors":[]}
+    report={"scenarios":[],"console_errors":[],"target":os.environ.get("QRSTUDIO_TEST_TARGET","source")}
     logo=Image.new("RGBA",(400,180),"#FFFFFF")
     draw=ImageDraw.Draw(logo)
     draw.rounded_rectangle((10,10,390,170),radius=30,fill="#172033")
@@ -238,6 +259,62 @@ def run():
         assert qrbox and urlbox and qrbox["x"]+qrbox["width"]<urlbox["x"],"Landscape preview must be left, settings right"
         page.screenshot(path=OUT/"03-landscape.png")
         report["scenarios"].append("844 × 450 landscape uses desktop columns: GPU preview left, Customize right")
+        # Reproduce the actual Android report: version 8 has an alignment eye
+        # exactly at the logo center. Check artwork pixels as well as decoding.
+        page.set_viewport_size({"width":1280,"height":900})
+        page.wait_for_timeout(800)
+        fill(page,"Destination URL *",LOGO_URL)
+        for label in ("Body shape: Square Rounded Square Rounded", "Eye frame: Square Rounded Square Rounded", "Eye ball: Square Rounded Square Rounded"):
+            tap(page,page.get_by_role("button",name=label,exact=True))
+        select(page,"Ink style","Plain")
+        square_logo=OUT/"QR-logo-regression.png"
+        make_logo(square_logo)
+        with page.expect_file_chooser() as chooser:
+            tap(page,page.get_by_role("button",name="Choose logo",exact=True))
+        chooser.value.set_files(square_logo)
+        fill(page,"Export resolution (px)","4000")
+        wait_ready(page)
+        data=save_download(page,"Export all formats (.zip)",OUT/"logo49-all.zip")
+        with zipfile.ZipFile(io.BytesIO(data)) as bundle:
+            for ext in ("png","jpg","svg","pdf"):
+                exported=bundle.read(f"qr-generator-4000.{ext}")
+                if ext=="svg":
+                    exported=resvg_py.svg_to_bytes(svg_string=exported.decode())
+                if ext=="pdf":
+                    with pdfium.PdfDocument(exported) as document:
+                        buffer=io.BytesIO()
+                        document[0].render(scale=300/72).to_pil().save(buffer,"PNG")
+                        exported=buffer.getvalue()
+                assert scan(exported)==LOGO_URL
+                assert_intact_logo(exported)
+        page.set_viewport_size({"width":390,"height":844})
+        page.wait_for_timeout(1000)
+        page.get_by_role("button",name="Preview & export",exact=True).click(force=True)
+        page.wait_for_timeout(900)
+        preview=page.screenshot(path=OUT/"04-logo49-portrait.png")
+        assert scan(preview)==LOGO_URL
+        assert_intact_logo(preview)
+        report["scenarios"].append("49x49 logo regression: intact GPU artwork and 4000px PNG/JPG/SVG/PDF; all independently decoded")
+        page.set_viewport_size({"width":1280,"height":900})
+        page.wait_for_timeout(800)
+        wide=OUT/"wordmark-logo.png"
+        make_logo(wide, (1200,280))
+        with page.expect_file_chooser() as chooser:
+            tap(page,page.get_by_role("button",name="Choose logo",exact=True))
+        chooser.value.set_files(wide)
+        tap(page,page.get_by_role("switch",name="Wide wordmark",exact=True))
+        for fraction, label, readout in ((.87,"Logo size · % of QR area","20%"),
+                                         (.2,"Space around logo","2 modules")):
+            set_slider(page,label,readout,fraction)
+        page.screenshot(path=OUT/"05-wordmark-settings.png")
+        select(page,"File format","PNG")
+        wait_ready(page)
+        wordmark=save_download(page,"Export QR code",OUT/"square-rounded-wordmark.png")
+        assert scan(wordmark)==LOGO_URL
+        x1,y1,x2,y2=assert_intact_logo(wordmark)
+        assert x2-x1>2000,"Wide wordmark setting must actually exceed the compact 25% cap"
+        assert abs((x2-x1)/(y2-y1)-1200/280)<.04,"Wordmark ratio must stay original"
+        report["scenarios"].append("Square Rounded reference style and Wide wordmark: real slider adjustments, proportional logo >50% of output width, exported PNG decoded")
         browser.close()
     assert not report["console_errors"],report["console_errors"]
     report["result"]="PASS"

@@ -7,14 +7,14 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 DIST=ROOT/"dist"
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 
 def main():
     windows=DIST/"QRGenerator"
     assert (windows/"QRGenerator.exe").exists(),"Build Windows first."
     (windows/"START-HERE.txt").write_text(
-        "QR Generator 1.1.0\n\n"
+        f"QR Generator {VERSION}\n\n"
         "Open QRGenerator.exe to start. No Python installation is required.\n"
         "Keep the _internal folder beside the EXE. Extract the whole ZIP before opening.\n\n"
         "Enter a full http/https URL. Choose your shapes, colors and optional logo.\n"
@@ -27,6 +27,8 @@ def main():
         "QR geometry in SVG is vector; PDF contains a 300 dpi raster image.\n\n"
         "All rendering happens on your device. Test your final printed design with a phone.\n",
         encoding="utf-8")
+    for name in ("LICENSE", "README.md", "README_TH.md"):
+        shutil.copy2(ROOT/name, windows/name)
     apks=[]
     for abi in ("arm64-v8a","x86_64"):
         apk=ROOT/"build"/"apk"/f"QRGenerator-{abi}.apk"

@@ -12,9 +12,9 @@ Get compiled apps from [GitHub Releases](https://github.com/Jirawat2105/QR-Code-
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [QR Generator 1.1.0 ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.0/QRGenerator-1.1.0-Windows.zip) |
-| Android ARM64 phones | [APK, approximately 29 MB](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.0/QRGenerator-1.1.0-Android-arm64-v8a.apk) |
-| Android x86_64 / emulator | [APK](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.0/QRGenerator-1.1.0-Android-x86_64.apk) |
+| Windows x64 | [QR Generator 1.1.1 ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.1/QRGenerator-1.1.1-Windows.zip) |
+| Android ARM64 phones | [APK, approximately 29 MB](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.1/QRGenerator-1.1.1-Android-arm64-v8a.apk) |
+| Android x86_64 / emulator | [APK](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.1.1/QRGenerator-1.1.1-Android-x86_64.apk) |
 
 No compiled macOS app is available. macOS has not been built or validated for this release.
 
@@ -30,7 +30,7 @@ Enter an HTTP/HTTPS URL, customize the design, and select **Export QR code** or 
 
 - Clean dark interface with live vector previews.
 - Preview on the left and Customize on the right on Windows and Android landscape; scrolling portrait layout on Android.
-- Square, rounded, dotted, diamond, and horizontal body shapes; selectable eye frames and eye balls.
+- Square, Square Rounded (separate softly rounded cells), rounded, dotted, diamond, and horizontal body shapes; selectable eye frames and eye balls.
 - Plain or gradient ink; solid, gradient, or image backgrounds with opacity, rounding, and soft edges.
 - Optional logo with width/height percentage scaling. Oversized logos auto-fit without stretching or cropping.
 - Optional reserved logo space with adjustable padding.
@@ -49,9 +49,11 @@ Enter an HTTP/HTTPS URL, customize the design, and select **Export QR code** or 
 | PDF | Raster image at the selected resolution, placed in a 300 dpi document with a white transparency matte. |
 | JPG | Re-encoded at quality 97 with a white transparency matte; not lossless. |
 
-The quiet zone and functional QR structure are retained. Styling, large logos, low contrast, transparent backgrounds, and photographs can reduce scan reliability. The app shows design feedback, but no artistic design is guaranteed to scan. Check the exported file and a printed sample before relying on it.
+The four-module quiet zone, finder patterns and timing structure are retained. A reserved logo area may cover central alignment markers; the app warns when this happens and keeps error correction H with a logo. Styling, large logos, low contrast, transparent backgrounds, and photographs can reduce scan reliability. The app shows design feedback, but no artistic design is guaranteed to scan. Check the exported file and a printed sample before relying on it.
 
-Logo percentages refer to the QR area excluding its four-module quiet zone. Auto-fit limits the longest logo dimension to 25% of that area and reports the effective scale. Input images are limited to 16 MB and 25 megapixels; imported assets are proportionally normalized to at most 2048 pixels per side.
+Logo percentages refer to the QR area excluding its four-module quiet zone. Scale can be set from 5–80% using Width or Height. Standard auto-fit limits the longest side to 25%. Enable **Wide wordmark** to span the center: it limits the short dimension to 25% and keeps artwork eight modules from each QR edge to protect timing/finder bands. Both modes preserve the ratio and report the effective scale. Input images are limited to 16 MB and 25 megapixels; imported assets are proportionally normalized to at most 2048 pixels per side.
+
+For a look like the supplied wordmark reference, choose **Square Rounded** for Body, Eye frame and Eye ball, plain black ink, a plain white background at 100% opacity, background rounding 0, and edge blur 0. Import the original wide logo image, enable **Wide wordmark**, use Width around 65–70%, enable reserved space and start with 1 module of padding. URL length changes the module layout; test the final export before printing.
 
 Minimalist mode uses error correction M without a logo and H with a logo; regular mode uses H. Settings are session-only and are not automatically restored after closing the app or Android activity recreation.
 
@@ -119,15 +121,17 @@ uv run python scripts/check.py
 
 This runs engine regression tests and an actual Flet UI E2E session in Microsoft Edge, including real uploads/downloads and independent QR decoding from PNG/JPG/SVG/PDF and GPU-preview screenshots. It checks portrait and landscape layouts, URL completion, Credits, Minimalist customization, and logo auto-fit.
 
+After building Windows, run `uv run python scripts/check.py --packaged` to drive the same full E2E suite against the actual packaged EXE through its local web transport.
+
 With an Android emulator running and `adb` available:
 
 ```powershell
 uv run python scripts/e2e_android.py
 ```
 
-Set `ANDROID_SERIAL` when multiple devices are connected. The native workflow validates installation, URL entry, system Save dialogs, all-format ZIP export, and emulator rotation. `scripts/e2e_safe_area.py` additionally checks simulated cutouts on a dedicated QA emulator.
+Set `ANDROID_SERIAL` when multiple devices are connected. The native workflow validates installation, URL entry, actual logo import through Android Files, Square Rounded shape selection, intact logo pixels, system Save dialogs, all-format ZIP export, and emulator rotation. `scripts/e2e_safe_area.py` additionally checks simulated cutouts on a dedicated QA emulator.
 
-Release 1.1.0 passed 42 engine tests, 12 packaged Windows web-transport E2E scenarios, 10 native Android 17 scenarios, and two cutout layouts. Physical phones, physical printing, and macOS were not tested.
+Release 1.1.1 passed 61 engine tests, 14 packaged Windows E2E scenarios through local web transport, 13 native Android 17 scenarios (API 37, 16 KB pages), and two simulated cutout layouts. The 49 × 49 QR regression verifies intact artwork pixels in the GPU preview and all four exported formats, in addition to independently decoding the QR. See the release QA report for details. Physical phones, physical printing, and macOS were not tested.
 
 ## Troubleshooting
 

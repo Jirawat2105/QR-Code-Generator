@@ -14,9 +14,9 @@ import qrcode
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 from qrcode.exceptions import DataOverflowError
 
-BODY_SHAPES = ("Square", "Rounded", "Dots", "Diamond", "Horizontal")
-FRAME_SHAPES = ("Square", "Rounded", "Circle", "Leaf")
-BALL_SHAPES = ("Square", "Rounded", "Circle", "Diamond")
+BODY_SHAPES = ("Square", "Square Rounded", "Rounded", "Dots", "Diamond", "Horizontal")
+FRAME_SHAPES = ("Square", "Square Rounded", "Rounded", "Circle", "Leaf")
+BALL_SHAPES = ("Square", "Square Rounded", "Rounded", "Circle", "Diamond")
 FORMATS = ("PNG", "SVG", "PDF", "JPG")
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 Image.MAX_IMAGE_PIXELS = 25_000_000
@@ -36,6 +36,7 @@ class Design:
     logo: bytes | None = None
     logo_scale: int = 20
     logo_axis: str = "Width"
+    wide_logo: bool = False
     reserve_logo: bool = True
     logo_padding: int = 2
     background_mode: str = "Plain"
@@ -68,7 +69,7 @@ class Design:
                               ("logo_axis", ("Width", "Height"))):
             if getattr(self, field) not in values:
                 raise ValueError(f"Invalid {field.replace('_', ' ')}.")
-        for field, low, high in (("resolution", 256, 8192), ("logo_scale", 5, 40),
+        for field, low, high in (("resolution", 256, 8192), ("logo_scale", 5, 80),
                                  ("background_opacity", 0, 100), ("background_rounding", 0, 25),
                                  ("edge_blur", 0, 20), ("edge_opacity", 0, 100),
                                  ("logo_padding", 0, 5), ("angle", 0, 360)):
@@ -135,7 +136,10 @@ def logo_geometry(d: Design, n: int):
     w, h = (side, side * img.height / img.width) if d.logo_axis == "Width" else (side * img.width / img.height, side)
     # Fit BOTH dimensions with one proportional transform. An unusually wide/tall
     # source must never fail simply because the other axis exceeds the safe area.
-    factor = min(1.0, n * .25 / max(w, h))
+    # Wide wordmarks can span the center like the supplied reference. Keep the
+    # short side <=25% and stay inside the timing/finder bands on both axes.
+    longest = max(1, n-16) if d.wide_logo else n*.25
+    factor = min(1.0, longest / max(w,h), n * .25 / min(w,h))
     w, h = w * factor, h * factor
     return ((n - w) / 2 + 4, (n - h) / 2 + 4, w, h)
 
@@ -176,7 +180,8 @@ class Shapes:
             tag = (f'<path d="M{x},{y} H{x+w-r} A{r},{r} 0 0 1 {x+w},{y+r} V{y+h} '
                    f'H{x+r} A{r},{r} 0 0 1 {x},{y+h-r} Z" fill="{color}"/>')
         else:
-            r = min(w,h) * (.28 if kind == "Rounded" else .45 if kind == "Horizontal" else 0)
+            r = min(w,h) * ((.24 if min(w,h)<=1 else .14) if kind == "Square Rounded" else
+                             .28 if kind == "Rounded" else .45 if kind == "Horizontal" else 0)
             self.draw.rounded_rectangle(box, radius=r*s, fill=fill)
             tag = f'<rect x="{x:.4f}" y="{y:.4f}" width="{w:.4f}" height="{h:.4f}" rx="{r:.4f}" fill="{color}"/>'
         self.svg.append(tag)
@@ -255,6 +260,13 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
         gx,gy,w,h = geo
         p = d.logo_padding
         return x+5>gx-p and x+4<gx+w+p and y+5>gy-p and y+4<gy+h+p
+    def alignment_under_logo(x, y):
+        if not (geo and d.reserve_logo):
+            return False
+        gx, gy, w, h = geo
+        # Preserve nearby alignment markers when only the optional padding
+        # touches them. Only artwork overlapping a marker can suppress it.
+        return x+7>gx and x+2<gx+w and y+7>gy and y+2<gy+h
     for y,row in enumerate(matrix):
         x = 0
         while x<n:
@@ -264,7 +276,7 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
             kind = body
             # A full-cell diamond has 50% ink coverage. Insetting it further made
             # small SVG modules too light for format-bit detection after rasterizing.
-            w, inset = 1, .08 if kind == "Dots" else 0
+            w, inset = 1, .08 if kind == "Dots" else .04 if kind == "Square Rounded" else 0
             if kind == "Horizontal":
                 while x+w<n and row[x+w] and not functional[y][x+w] and not in_finder(x+w,y) and not reserved(x+w,y):
                     w += 1
@@ -279,6 +291,19 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
         ball_side=3.3 if ball=="Diamond" else 3
         shapes.shape(ball,x+(7-ball_side)/2,y+(7-ball_side)/2,ball_side,ball_side)
     for x,y in alignments:
+        # A central alignment marker can fall inside the reserved logo area
+        # (versions 7+). Omit the whole marker, avoiding fragments at its edge.
+        # The other alignment markers, finders, timing and quiet zone remain.
+        if alignment_under_logo(x, y):
+            continue
+        if body == "Square Rounded":
+            # Keep alignment bits, but let them blend into the separated body
+            # cells of the reference instead of introducing extra large eyes.
+            for dy in range(-2,3):
+                for dx in range(-2,3):
+                    if matrix[y+dy][x+dx]:
+                        shapes.shape(body,x+dx+4.04,y+dy+4.04,.92,.92)
+            continue
         shapes.shape(frame,x+2,y+2,5,5)
         shapes.shape(frame,x+3,y+3,3,3,0)
         shapes.shape(ball,x+4,y+4,1,1)
@@ -295,28 +320,16 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
         # A single proportional transform; do not crop or stretch source artwork.
         source_logo=png_bytes(logo)
         logo = logo.resize((max(1,round(w*shapes.scale)),max(1,round(h*shapes.scale))),Image.Resampling.LANCZOS)
-        # Cut functional cells out of the logo alpha instead of allocating a full
-        # export-sized image per cell. This also preserves photo/gradient backgrounds.
-        alpha=logo.getchannel("A")
-        safe=ImageDraw.Draw(alpha)
-        cuts=[]
+        # Artwork is an intact overlay in every renderer. Punching functional
+        # cells out of its alpha exposed a miniature QR eye through the logo.
         origin_x,origin_y=round(gx*shapes.scale),round(gy*shapes.scale)
-        for y in range(n):
-            for x in range(n):
-                if functional[y][x] and x+5>gx and x+4<gx+w and y+5>gy and y+4<gy+h:
-                    safe.rectangle((round((x+4)*shapes.scale)-origin_x,round((y+4)*shapes.scale)-origin_y,
-                                    round((x+5)*shapes.scale)-origin_x-1,round((y+5)*shapes.scale)-origin_y-1),fill=0)
-                    cuts.append(f'<rect x="{x+4}" y="{y+4}" width="1" height="1" fill="black"/>')
-        logo.putalpha(alpha)
         if vector_preview:
             layer = Image.new("RGBA", (work_size, work_size))
             layer.alpha_composite(logo, (origin_x,origin_y))
             logo_overlay = png_bytes(layer)
         else:
             raster.alpha_composite(logo,(origin_x,origin_y))
-        logo_svg=(f'<defs><mask id="logo-safe" maskUnits="userSpaceOnUse" x="0" y="0" width="{units}" height="{units}">'
-                  f'<rect width="{units}" height="{units}" fill="white"/>{"".join(cuts)}</mask></defs>'
-                  f'<image x="{gx}" y="{gy}" width="{w}" height="{h}" mask="url(#logo-safe)" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,{base64.b64encode(source_logo).decode()}"/>')
+        logo_svg=(f'<image x="{gx}" y="{gy}" width="{w}" height="{h}" preserveAspectRatio="xMidYMid meet" href="data:image/png;base64,{base64.b64encode(source_logo).decode()}"/>')
     notes = []
     def lum(c):
         vals = [v/255 for v in bytes.fromhex(c[1:])]
@@ -333,6 +346,8 @@ def render(d: Design, fmt: str = "PNG", preview_size: int | None = None) -> tupl
     if geo and (d.logo_scale>25 or geo[2]*geo[3]/n**2>.08):
         notes.append("Large logos can reduce readability. Test a printed sample or reduce the logo scale.")
     if geo:
+        if any(alignment_under_logo(x,y) for x,y in alignments):
+            notes.append("The reserved logo area covers a central alignment marker. Reduce the logo size and test the exported QR on its final surface.")
         effective = (geo[2] if d.logo_axis == "Width" else geo[3]) / n * 100
         if effective < d.logo_scale-.05:
             notes.append(f"Logo auto-fitted to {effective:.1f}% {d.logo_axis.lower()} while preserving its original aspect ratio.")

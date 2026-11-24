@@ -35,7 +35,11 @@ def contour(kind,x,y,w,h,filled=True):
         for i in range(4):
             line(pts[i],pts[(i+1)%4])
     else:
-        radius=min(w,h)*(.28 if kind=="Rounded" else .45 if kind=="Horizontal" else .35 if kind=="Leaf" else 0)
+        # Use logical module dimensions for the same radius in GPU and exports.
+        # Square Rounded body cells are inset to .92 modules; finder rings and
+        # balls use the gentler radius ratio passed via their geometry kind.
+        radius=min(w,h)*(.24 if kind=="Square Rounded Body" else .14 if kind=="Square Rounded" else
+                           .28 if kind=="Rounded" else .45 if kind=="Horizontal" else .35 if kind=="Leaf" else 0)
         tl,tr,br,bl=(0,radius,0,radius) if kind=="Leaf" else (radius,)*4
         a=(x+tl,y)
         line(a,(x+w-tr,y))
@@ -94,6 +98,8 @@ class GPUPreview:
         scale=side/packet["units"]
         elements=[]
         for kind,x,y,w,h,fill in packet["ops"]:
+            if kind=="Square Rounded" and min(w,h)<=1:
+                kind="Square Rounded Body"
             elements.extend(contour(kind,x*scale,y*scale,w*scale,h*scale,bool(fill)))
         rad=math.radians(packet["angle"])
         dx,dy=math.cos(rad),math.sin(rad)

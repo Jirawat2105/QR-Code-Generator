@@ -1,6 +1,6 @@
 [project]
 name = "muphoto-qr-studio"
-version = "1.1.0"
+version = "1.1.1"
 description = "Tired of ads? Here, use this instead. A local QR code generator for Windows and Android."
 license = "MIT"
 authors = [{name = "Jirawat Pratuangtip"}]
@@ -15,7 +15,7 @@ org = "com.muphoto"
 product = "QR Generator"
 company = "MuPhoto"
 copyright = "Copyright (c) 2026 MuPhoto"
-build_number = 2
+build_number = 3
 artifact = "QRGenerator"
 
 [tool.flet.app]

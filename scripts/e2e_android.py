@@ -18,12 +18,13 @@ import zxingcpp
 import resvg_py
 import pypdfium2 as pdfium
 from PIL import Image
+from e2e_logo import LOGO_URL, make_logo, assert_intact_logo
 
 ADB=shutil.which("adb")
 PACKAGE="com.muphoto.muphoto_qr_studio"
 OUT=Path("test-results/android")
 OUT.mkdir(parents=True,exist_ok=True)
-URL="https://example.com/android-e2e"
+URL=LOGO_URL
 
 
 def adb(*args,binary=False,timeout=40):
@@ -103,6 +104,26 @@ def scroll_to(label,direction="down",tries=24):
     raise AssertionError(f"Could not scroll to native control: {label}")
 
 
+def select_shape(section, shape):
+    # Android exposes the tile label alone; the web semantics also include its
+    # tooltip. Scope identical shape labels using the visible section heading.
+    scroll_to(section)
+    width,height=map(int,re.findall(r"\d+",adb("shell","wm","size"))[-2:])
+    for _ in range(6):
+        tree=dump()
+        heading=find(section,tree,exact=True)
+        assert heading is not None,f"Shape section must remain visible: {section}"
+        bottom=bounds(heading)[3]
+        candidates=[node for node in tree.iter("node")
+                    if node.get("content-desc")==shape and bottom<bounds(node)[1]
+                    and bounds(node)[3]<height*.84]
+        if candidates:
+            tap_node(min(candidates,key=lambda node:bounds(node)[1]))
+            return
+        adb("shell","input","swipe",str(width//2),str(int(height*.72)),str(width//2),str(int(height*.57)),"650")
+    raise AssertionError(f"Could not select {shape} in {section}")
+
+
 def run():
     assert ADB,"Install Android platform-tools (adb) first."
     devices=adb("devices")
@@ -146,15 +167,41 @@ def run():
     existing=node.get("text","")
     if existing:
         adb("shell","input","keyevent",*(["67"]*len(existing)))
-    adb("shell","input","text","example.com/android-e2e%s%s")
+    adb("shell","input","text",URL.removeprefix("https://")+"%s%s")
     time.sleep(.8)
     edited=find("Destination URL")
     assert edited is not None and edited.get("text")==URL,"Android double-space must add https:// before blur"
     adb("shell","input","keyevent","4") # close keyboard
     time.sleep(.8)
+    tap("Customize",exact=True)
+    time.sleep(.8)
+    for label in ("Body shape", "Eye frame", "Eye ball"):
+        select_shape(label,"Square Rounded")
+        time.sleep(.3)
+    # Import a real opaque image through Android's document provider. Its
+    # central green pixels must survive both the GPU preview and all exports.
+    logo_path=OUT/"QR-logo-regression.png"
+    make_logo(logo_path)
+    adb("push",str(logo_path),"/sdcard/Download/QR-logo-regression.png")
+    adb("shell","am","broadcast","-a","android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d","file:///sdcard/Download/QR-logo-regression.png")
+    tap_node(scroll_to("Choose logo"))
+    time.sleep(2)
+    selected=find("QR-logo-regression.png")
+    if selected is None:
+        tap("Show roots",exact=True)
+        time.sleep(.5)
+        tap("Downloads",exact=True)
+        time.sleep(1)
+        selected=find("QR-logo-regression.png")
+    assert selected is not None,"Uploaded test logo must be available in Android Files"
+    tap_node(selected)
+    time.sleep(1.5)
+    print("PASS: real Android document picker imported the logo",flush=True)
     tap("Preview & export",exact=True)
     time.sleep(.8)
     wait_scan(URL,"02-updated-preview.png")
+    assert_intact_logo((OUT/"02-updated-preview.png").read_bytes())
     print("PASS: native URL entry and preview update decoded",flush=True)
     # Use Android's real document provider; select the default Downloads location.
     tap_node(scroll_to("Export QR code"))
@@ -182,6 +229,7 @@ def run():
     adb("pull",latest,str(path))
     assert Image.open(path).size==(2048,2048)
     assert scan(path.read_bytes())==URL
+    assert_intact_logo(path.read_bytes())
     screenshot("03-native-export.png")
     print("PASS: Android system Save dialog and exported PNG decoded",flush=True)
     tap_node(scroll_to("Export all formats (.zip)"))
@@ -210,10 +258,15 @@ def run():
                 data=resvg_py.svg_to_bytes(svg_string=data.decode())
             if fmt=="pdf":
                 with pdfium.PdfDocument(data) as doc:
-                    result=zxingcpp.read_barcode(doc[0].render(scale=300/72).to_pil())
+                    image=doc[0].render(scale=300/72).to_pil()
+                    result=zxingcpp.read_barcode(image)
                     assert result and result.text==URL
+                    buffer=io.BytesIO()
+                    image.save(buffer,"PNG")
+                    assert_intact_logo(buffer.getvalue())
             else:
                 assert scan(data)==URL,f"Native {fmt} export must scan"
+                assert_intact_logo(data)
     print("PASS: Android four-worker ZIP export; PNG/JPG/SVG/PDF independently decoded",flush=True)
     if adb("shell","getprop","ro.kernel.qemu").strip()=="1":
         auto=adb("shell","settings","get","system","accelerometer_rotation").strip()
@@ -225,6 +278,7 @@ def run():
             adb("shell","settings","put","system","user_rotation","1")
             time.sleep(2)
             wait_scan(URL,"04-native-landscape.png")
+            assert_intact_logo((OUT/"04-native-landscape.png").read_bytes())
             tree=dump()
             preview=find("Live QR preview",tree,exact=True)
             controls=find("Destination URL",tree)
@@ -242,7 +296,9 @@ def run():
                          "Safe-area portrait UI and bottom navigation","Native URL keyboard entry and preview update",
                          "Android system document save dialog","2048 × 2048 PNG export decoded to entered URL",
                          "Logo opens creator credits", "Android double-space URL shortcut",
-                         "Landscape: GPU preview left, Customize right", "Four-worker ZIP export: all four formats decoded"]}
+                         "Landscape: GPU preview left, Customize right", "Four-worker ZIP export: all four formats decoded",
+                         "Real Android document picker logo import", "49x49 QR: intact logo pixels in portrait/landscape GPU preview and all four exports",
+                         "Square Rounded body, eye frame and eye ball selected natively"]}
     (OUT/"report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
     print(json.dumps(report,indent=2))
 

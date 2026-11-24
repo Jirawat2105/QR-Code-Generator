@@ -90,6 +90,7 @@ class Studio:
 
     def shape_picker(self, name, label, options):
         icons={"Square":ft.Icons.CROP_SQUARE_ROUNDED,"Rounded":ft.Icons.ROUNDED_CORNER,
+               "Square Rounded":ft.Icons.ROUNDED_CORNER,
                "Dots":ft.Icons.APPS_ROUNDED,"Circle":ft.Icons.CIRCLE_OUTLINED,
                "Diamond":ft.Icons.DIAMOND_OUTLINED,"Leaf":ft.Icons.SPA_OUTLINED,
                "Horizontal":ft.Icons.DRAG_HANDLE_ROUNDED}
@@ -109,7 +110,8 @@ class Studio:
                               on_click=select,tooltip=f"{label}: {option}",ink=True)
             tiles.append(tile)
             self.shape_tiles[(name,option)]=tile
-        group=ft.Column([text(label,12,MUTED),ft.Row(tiles,spacing=7)],spacing=8)
+        group=ft.Column([text(label,12,MUTED),
+                         *[ft.Row(tiles[i:i+3],spacing=7) for i in range(0,len(tiles),3)]],spacing=8)
         self.controls[name+"_group"]=group
         return group
 
@@ -179,7 +181,8 @@ class Studio:
         logo_card=self.card("04","Make it recognizably you","Your original logo. No cropping. No stretching.",[
             logo_buttons,self.logo_name,
             self.dropdown("logo_axis","Scale relative to QR",["Width","Height"]),
-            self.slider("logo_scale","Logo size · % of QR area",5,40),
+            self.toggle("wide_logo","Wide wordmark","Allow a wide or tall logo across the center. Test before printing."),
+            self.slider("logo_scale","Logo size · % of QR area",5,80),
             self.toggle("reserve_logo","Reserve space for logo","Clear a dedicated area beneath your logo."),
             self.slider("logo_padding","Space around logo",0,5," modules")])
         self.bg_image_group=ft.Column([
@@ -256,7 +259,7 @@ class Studio:
                            padding=ft.Padding.symmetric(horizontal=28,vertical=22))
         self.footer=ft.Container(ft.Row([ft.Icon(ft.Icons.LOCK_OUTLINE_ROUNDED,size=12,color=MUTED),
                                     text("Made on your device · works offline",10,MUTED),ft.Container(expand=True),
-                                    text("QR Generator / 1.1",10,MUTED)],spacing=6),
+                                    text("QR Generator / 1.1.1",10,MUTED)],spacing=6),
                             padding=ft.Padding.symmetric(horizontal=28,vertical=12))
         self.mobile_nav=ft.Container(ft.Row([
             ft.TextButton("Customize",icon=ft.Icons.TUNE_ROUNDED,on_click=self.jump_customize,expand=True),

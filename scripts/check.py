@@ -1,5 +1,6 @@
 """One command for regression tests + an isolated real-UI E2E session."""
 import os
+import argparse
 import socket
 import subprocess
 import sys
@@ -11,6 +12,9 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--packaged",action="store_true",help="Run E2E against the built Windows EXE")
+    args=parser.parse_args()
     subprocess.run([sys.executable,"-m","pytest","tests/test_engine.py","-q"],cwd=ROOT,check=True)
     with socket.socket() as s:
         s.bind(("127.0.0.1",0))
@@ -19,8 +23,10 @@ def main():
     env["QRSTUDIO_BASE_URL"]=f"http://127.0.0.1:{port}"
     out=ROOT/"test-results"
     out.mkdir(exist_ok=True)
-    with (out/"e2e-server.log").open("w",encoding="utf-8") as log:
-        proc=subprocess.Popen([sys.executable,"src/main.py"],cwd=ROOT,env=env,stdout=log,stderr=log,
+    command=[str(ROOT/"dist/QRGenerator/QRGenerator.exe")] if args.packaged else [sys.executable,"src/main.py"]
+    env["QRSTUDIO_TEST_TARGET"]="packaged-windows-exe" if args.packaged else "source"
+    with (out/("packaged-e2e-server.log" if args.packaged else "e2e-server.log")).open("w",encoding="utf-8") as log:
+        proc=subprocess.Popen(command,cwd=ROOT,env=env,stdout=log,stderr=log,
                               creationflags=subprocess.CREATE_NO_WINDOW if sys.platform=="win32" else 0)
         try:
             for _ in range(100):

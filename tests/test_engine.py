@@ -123,7 +123,7 @@ def test_url_required(url):
         render(Design(url=url))
 
 
-@pytest.mark.parametrize("options",[{"resolution":0},{"resolution":8193},{"resolution":True},{"color":"red"},{"logo_scale":50},{"body":"wrong"},{"background_opacity":101}])
+@pytest.mark.parametrize("options",[{"resolution":0},{"resolution":8193},{"resolution":True},{"color":"red"},{"logo_scale":81},{"body":"wrong"},{"background_opacity":101}])
 def test_invalid_settings(options):
     with pytest.raises(ValueError):
         render(replace(Design(),**options))
@@ -135,6 +135,7 @@ def test_oversized_logo_is_proportionally_auto_fitted(logo):
     _,_,w,h=logo_geometry(d,n)
     assert w/h==pytest.approx(2.5)
     assert max(w,h)<=n*.25+1e-9
+    assert max(w,h)<=n-16+1e-9
     data,meta=render(d)
     assert decode(data)==d.url
     assert any("auto-fitted" in w for w in meta["warnings"])
@@ -158,6 +159,76 @@ def test_leaf_diamond_gradient_logo_round_trip(logo):
         if fmt=="SVG":
             data=resvg_py.svg_to_bytes(svg_string=data.decode())
         assert decode(data)==d.url
+
+
+@pytest.mark.parametrize("reserve", [False, True])
+@pytest.mark.parametrize("fmt", ["PNG", "JPG", "SVG", "PDF", "PREVIEW"])
+def test_version8_logo_is_intact_and_exports_scan(reserve, fmt):
+    # The reported Android screenshot is 49 x 49. Earlier short-URL tests had
+    # no central alignment marker and could not detect holes in the artwork.
+    url = "https://example.com/" + "a" * 50
+    color = (25, 196, 125, 255)
+    logo = png_bytes(Image.new("RGBA", (400, 400), color))
+    d = Design(url=url, logo=logo, logo_scale=25, reserve_logo=reserve, resolution=1200)
+    result, meta = render(d, fmt, 640 if fmt == "PREVIEW" else None)
+    assert meta["modules"] == 49
+    if fmt == "PREVIEW":
+        image = Image.open(io.BytesIO(result["logo"])).convert("RGBA")
+    elif fmt == "SVG":
+        image = Image.open(io.BytesIO(resvg_py.svg_to_bytes(svg_string=result.decode()))).convert("RGBA")
+    elif fmt == "PDF":
+        with pdfium.PdfDocument(result) as document:
+            image = document[0].render(scale=300/72).to_pil().convert("RGBA")
+    else:
+        image = Image.open(io.BytesIO(result)).convert("RGBA")
+    n = 49
+    gx, gy, w, h = logo_geometry(d, n)
+    scale = image.width / (n+8)
+    crop = image.crop((round((gx+.5)*scale), round((gy+.5)*scale),
+                       round((gx+w-.5)*scale), round((gy+h-.5)*scale)))
+    assert all(max(abs(a-b) for a,b in zip(pixel, color)) <= 5 for pixel in crop.get_flattened_data())
+    if fmt != "PREVIEW":
+        qr = zxingcpp.read_barcode(image.convert("RGB"))
+        assert qr and qr.text == url
+    elif reserve:
+        assert (d.eye_frame, 26, 26, 5, 5, 255) not in result["ops"]
+
+
+def test_transparent_logo_reservation_clears_entire_central_alignment():
+    d = Design(url="https://example.com/" + "a"*50,
+               logo=png_bytes(Image.new("RGBA", (400,400), (0,0,0,0))), resolution=1140)
+    data, _ = render(d)
+    image = Image.open(io.BytesIO(data)).convert("RGBA")
+    # Central 5x5 marker is within a 9.8-module reserved logo rectangle.
+    assert image.crop((26*20,26*20,31*20,31*20)).getextrema() == ((255,255),)*4
+
+
+@pytest.mark.parametrize("fmt", ["PNG", "SVG", "JPG", "PDF"])
+@pytest.mark.parametrize("axis", ["Width", "Height"])
+def test_square_rounded_wide_wordmark_reference(fmt, axis):
+    # Reference has separate rounded squares and a wide, proportional wordmark.
+    logo = Image.new("RGBA", (1200,280) if axis=="Width" else (280,1200), "#19C47D")
+    d = Design(url="https://drive.google.com/drive/folders/1bWbuhVT6bIO7LRGfXdDzCE1iOuKiJ6Uj",
+               body="Square Rounded", eye_frame="Square Rounded", eye_ball="Square Rounded",
+               logo=png_bytes(logo), logo_axis=axis, logo_scale=70, wide_logo=True, logo_padding=1,
+               color="#000000", background_rounding=0, resolution=1600)
+    gx,gy,w,h = logo_geometry(d,49)
+    assert w/h == pytest.approx(logo.width/logo.height)
+    assert max(w,h) > 49*.6  # Wide artwork must no longer be capped at 25% width.
+    assert gx>=12 and gy>=12  # Protect timing/finder bands.
+    data,_ = render(d,fmt)
+    if fmt=="SVG":
+        data=resvg_py.svg_to_bytes(svg_string=data.decode())
+    if fmt=="PDF":
+        with pdfium.PdfDocument(data) as document:
+            qr=zxingcpp.read_barcode(document[0].render(scale=300/72).to_pil())
+    else:
+        qr=zxingcpp.read_barcode(Image.open(io.BytesIO(data)))
+    assert qr and qr.text==d.url
+    packet,_=render(d,"PREVIEW",640)
+    cells=[op for op in packet["ops"] if op[0]=="Square Rounded" and op[3]<1]
+    assert cells and all(op[3]==pytest.approx(.92) and op[4]==pytest.approx(.92) for op in cells)
+    assert not any(op[0]=="Square Rounded" and op[3]==5 and op[5] for op in packet["ops"]), "Alignment bits should blend into the body, not become extra large eyes"
 
 
 @pytest.mark.parametrize("value,commit,expected",[

@@ -6,11 +6,16 @@ Python GUI สร้าง QR สำหรับ Windows และ Android ธ�
 
 ถ้าใช้แพ็กเกจที่ build ไว้แล้ว เปิด `dist/QRGenerator/QRGenerator.exe` ได้เลย โดยเก็บโฟลเดอร์ `_internal` ไว้ข้าง EXE ไม่ต้องติดตั้ง Python
 
-สำหรับรันจากซอร์ส ต้องใช้ Python 3.13 แบบ 64-bit
+ใน ZIP สำหรับ Windows เลือกเปิด `QRGenerator.exe` หรือ `run.bat` ได้ทั้งสองแบบ
 
-1. ดับเบิลคลิก `setup.bat` เพื่อติดตั้ง dependencies ครั้งแรก
-2. ดับเบิลคลิก `run.bat` เพื่อเปิดแอป
-3. ใส่ URL แบบ `https://example.com` ปรับแต่ง แล้วกด **Export QR code**
+- `QRGenerator.exe`: เปิดแอปที่แพ็กไว้แล้ว ไม่ต้องติดตั้ง Python
+- `run.bat`: ติดตั้ง Python 3.13 ให้อัตโนมัติหากยังไม่มีรุ่นที่ใช้ได้ ติดตั้ง dependencies ใน `.python-env` แล้วเปิดแอปจากซอร์สให้เลย ไม่ต้องเปิด `setup.bat` ก่อน และไม่เรียกใช้ EXE หรือ `_internal` ที่มากับแพ็กเกจ
+
+ครั้งแรกต้องมีอินเทอร์เน็ต ไม่ต้องใช้สิทธิ์ Administrator และไม่เปลี่ยน PATH หรือแพ็กเกจ Python เดิม การเปิดครั้งต่อไปใช้ Python และ dependencies ที่ติดตั้งไว้แล้วได้แบบออฟไลน์ เก็บ `run.bat`, `requirements.txt`, `src` และ `scripts` ไว้ด้วยกัน
+
+`setup.bat` ยังใช้ได้สำหรับติดตั้งอย่างเดียว หากติดตั้งไม่สำเร็จ จะแสดงข้อผิดพลาดและไม่เปิดแอป สามารถแก้การเชื่อมต่อแล้วเปิดใหม่เพื่อลองอีกครั้งได้
+
+ใส่ URL แบบ `https://example.com` ปรับแต่ง แล้วกด **Export QR code**
 
 หรือใช้ PowerShell:
 
@@ -18,6 +23,16 @@ Python GUI สร้าง QR สำหรับ Windows และ Android ธ�
 uv sync
 uv run flet run src/main.py
 ```
+
+## เริ่มใช้งาน macOS ผ่าน Python
+
+1. ดาวน์โหลด [macOS Python ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-macOS-Python.zip) แล้วแตกไฟล์ในโฟลเดอร์ที่เขียนข้อมูลได้
+2. ดับเบิลคลิก **Run.command** ครั้งเดียว ตัวเปิดจะเลือก Apple Silicon / Intel ให้อัตโนมัติ ติดตั้ง Python 3.13 หากยังไม่มี ติดตั้ง dependencies แล้วเปิดแอปต่อให้เลย
+3. ครั้งถัดไปดับเบิลคลิกไฟล์เดิม ไม่ต้องติดตั้ง DMG, Homebrew, Xcode หรือใช้ `sudo`
+
+ตัวเปิดใช้ uv รุ่นที่กำหนดและตรวจ SHA-256 ของไฟล์ดาวน์โหลดก่อนใช้งาน อินเทอร์เน็ตจำเป็นสำหรับติดตั้งครั้งแรก แอปทำงานผ่าน Python และ Flet desktop client ไม่มีไฟล์แอป Mac ที่คอมไพล์ไว้ และยังไม่ได้ทดสอบ GUI บนเครื่อง Mac จริง
+
+หาก macOS ไม่ยอมเปิด ให้ใช้เมนู **Open** เมื่อระบบอนุญาต หรือเปิด Terminal ในโฟลเดอร์แล้วใช้ `bash Run.command` หากสิทธิ์ executable หายจากการคัดลอก ใช้ `chmod +x Run.command` แล้ว `./Run.command` ไม่ต้องปิดระบบป้องกันของเครื่อง
 
 
 ## ตั้งค่ารูปแบบสี่เหลี่ยมมุมมนตามตัวอย่าง

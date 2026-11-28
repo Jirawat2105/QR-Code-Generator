@@ -4,7 +4,7 @@
 
 Application code written entirely by AI under the direction of **Jirawat Pratuangtip**. See the [disclaimer](#disclaimer).
 
-A local, ad-free QR design app for Windows and Android. Customize your QR, preview it live, and export files without an account or expiring redirect links.
+A local, ad-free QR design app for Windows and Android, with a Python launcher for macOS. Customize your QR, preview it live, and export files without an account or expiring redirect links.
 
 ## Downloads
 
@@ -12,15 +12,22 @@ Get compiled apps from [GitHub Releases](https://github.com/Jirawat2105/QR-Code-
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [QR Generator 1.2.0 ZIP](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Windows.zip) |
+| Windows x64 — EXE or Python | [ZIP with EXE and auto-installing run.bat](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Windows.zip) |
+| macOS — Python only | [ZIP with one-click Run.command](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-macOS-Python.zip) |
 | Android ARM64 phones | [APK, approximately 29 MB](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Android-arm64-v8a.apk) |
 | Android x86_64 / emulator | [APK](https://github.com/Jirawat2105/QR-Code-Generator/releases/download/v1.2.0/QRGenerator-1.2.0-Android-x86_64.apk) |
 
-No compiled macOS app is available. macOS has not been built or validated for this release.
+The macOS download contains Python source and a launcher, with no compiled app or DMG. Native macOS GUI behavior has not been validated on a Mac.
 
 ## Getting started
 
 **Windows:** Extract the entire ZIP, then open `QRGenerator.exe`. Keep `_internal` beside the executable. Python is included; do not copy the EXE alone.
+
+**Windows Python alternative:** Double-click `run.bat` in the same extracted folder. It automatically installs Python 3.13 if a compatible interpreter is missing, installs the app dependencies into `.python-env`, and opens the app. There is no separate setup step. This route uses `src/main.py` and does not invoke the bundled `QRGenerator.exe` or its `_internal` runtime.
+
+**macOS Python:** Extract the macOS Python ZIP into a writable folder, then double-click **Run.command**. It selects Apple Silicon or Intel setup tools, automatically installs Python 3.13 if needed, installs dependencies, and starts the Python app. No DMG, Homebrew, Xcode, or administrator installation is needed.
+
+Both Python launchers need internet access on the first run, including Flet's initial desktop-client download. After a successful first launch, they reuse the interpreter, dependencies and desktop client and can work offline. Keep the launcher, `requirements.txt`, `src`, and (on Windows) `scripts` together. Setup uses a version-pinned, SHA-256-verified [uv download](https://docs.astral.sh/uv/getting-started/installation/) and its [automatic Python provisioning](https://docs.astral.sh/uv/guides/install-python/); existing global Python packages and PATH are left alone. Missing dependencies are installed before the app starts. The app still uses Flet's native desktop client; system security policy can also block downloaded Python or third-party components.
 
 **Android:** Install the APK matching your architecture. Most modern phones use ARM64. Android 17 was tested using an API 37 x86_64 emulator with 16 KB memory pages; physical ARM64 phones have not been tested. Both APKs have 16 KB-aligned native libraries. The build uses minimum SDK 24 and target SDK 36.
 
@@ -82,7 +89,18 @@ Compiled downloads belong in Releases, not the source tree. Build directories, v
 
 ## Run from source
 
-Use 64-bit Python 3.13. On Windows, run `setup.bat`, then `run.bat`. Initial dependency installation requires internet access.
+On Windows, double-click `run.bat`. On macOS, double-click `Run.command`. Both install Python 3.13 automatically when needed and install their own runtime dependencies. `setup.bat` remains available as an optional Windows install-only shortcut; `Run.command --prepare-only` does the same on macOS.
+
+If you already have Python 3.13 and prefer manual setup:
+
+```sh
+python3.13 -m venv .python-env
+# macOS:
+.python-env/bin/python -m pip install -r requirements.txt
+.python-env/bin/python src/main.py
+```
+
+On Windows, use `py -3.13 -m venv .python-env`, then `.python-env\Scripts\python.exe` for the two subsequent commands. Developer/build dependencies are separate from these runtime requirements.
 
 Alternatively:
 
@@ -136,9 +154,21 @@ Set `ANDROID_SERIAL` when multiple devices are connected. The native workflow va
 
 Release 1.2.0 passed 139 engine tests, 22 packaged Windows UI E2E scenarios through local web transport, 21 native Android 17 scenarios (API 37, 16 KB pages), and two simulated cutouts. It includes raw hue/SV gestures, HEX/RGB/HSV entry, Apply/Cancel, collapsed invalid settings, polygon previews/exports and resizing an open picker. Prior Minimalist/logo regressions still independently decode actual QR data, grid size and error-correction level from previews and PNG/JPG/SVG/PDF exports. See the release QA report for exact scenario counts and platform limits. Physical phones, physical printing, and macOS were not tested.
 
+The **2026-11-28 packaging refresh** adds Windows/macOS Python launchers without changing the app renderer, Windows EXE or Android APKs. Its checks reran **139 engine tests** and **22 real Flet UI E2E scenarios against `run.bat` from the extracted ZIP**, with Python absent from PATH, an empty managed-Python/cache directory, and the bundled EXE unavailable. It also checked offline reuse, automatic repair of a removed dependency, and stopping on install failure. A native Windows smoke check observed the dark UI, live QR and functioning Minimalist toggle after the automatic Flet-client download. macOS checks cover shell syntax, executable ZIP permissions, both official setup archive hashes and binary-wheel dependency resolution for Intel/Apple Silicon; native Mac GUI behavior remains untested. See `QA-LAUNCHERS-1.2.0.json` in Releases.
+
+To repeat the Windows launcher workflow after packaging:
+
+```powershell
+uv run python scripts/e2e_launchers.py
+```
+
+This downloads a fresh, isolated Python and dependencies into `.qa`, then drives the actual app with `scripts/e2e_web.py`. It does not uninstall or change your system Python.
+
 ## Troubleshooting
 
 - Extract the Windows ZIP fully and keep `_internal` beside the EXE.
+- For the Windows Python route, open `run.bat`; read any setup error in its console before closing. Retry after restoring internet access if the first download fails. Do not disable antivirus to run the app.
+- If macOS refuses to open `Run.command`, use **Open** from its context menu when permitted by your Mac's policy. If the executable bit was lost while copying, open Terminal in the extracted folder and run `chmod +x Run.command`, then `./Run.command`. You can also run `bash Run.command` directly. Setup errors stay visible in Terminal.
 - Use the correct APK architecture and ensure sufficient installation space.
 - Check the URL and displayed settings if export is disabled.
 - If scanning fails, use darker ink, a light plain background, a smaller logo, or a higher resolution.

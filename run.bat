@@ -1,8 +1,7 @@
 @echo off
-cd /d "%~dp0"
-if not exist ".venv\Scripts\python.exe" (
-  echo Run setup.bat first.
-  pause
-  exit /b 1
-)
-".venv\Scripts\python.exe" src\main.py
+setlocal
+rem Windows Python fallback: installs Python and dependencies automatically.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\launch_windows.ps1" %*
+set "QR_EXIT=%ERRORLEVEL%"
+if not "%QR_EXIT%"=="0" if not defined QRGENERATOR_NO_PAUSE pause
+exit /b %QR_EXIT%
